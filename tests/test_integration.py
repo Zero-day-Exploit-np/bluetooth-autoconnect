@@ -47,8 +47,10 @@ from bluetooth_autoconnect.models import Adapter, Device
 # Shared fake D-Bus infrastructure
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class _FakeDBusIface:
     """Minimal stand-in for org.freedesktop.DBus interface."""
+
     async def call_add_match(self, rule: str) -> None:
         return None
 
@@ -85,6 +87,7 @@ class _FakeBus:
 
     Stores registered message handlers so tests can fire them manually.
     """
+
     def __init__(self) -> None:
         self._proxy = _FakeProxyObject()
         self.message_handlers: list = []
@@ -120,6 +123,7 @@ def _make_props_changed_message(
 # ─────────────────────────────────────────────────────────────────────────────
 # _schedule() helper
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def test_schedule_runs_coroutine_on_loop() -> None:
     """_schedule() must fire the coroutine on the running loop."""
@@ -158,6 +162,7 @@ def test_schedule_is_silent_when_no_loop() -> None:
 # subscribe() — InterfacesAdded signal
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestInterfacesAdded:
     """A new device appearing fires an 'added' callback."""
 
@@ -177,9 +182,7 @@ class TestInterfacesAdded:
             client = BlueZClient()
             await client.connect()
             await client.subscribe(cb)
-            om = client._bluez_root.get_interface(
-                "org.freedesktop.DBus.ObjectManager"
-            )
+            om = client._bluez_root.get_interface("org.freedesktop.DBus.ObjectManager")
             # Simulate BlueZ sending InterfacesAdded for a new adapter
             om._added_cb(
                 "/org/bluez/hci0",
@@ -188,9 +191,7 @@ class TestInterfacesAdded:
             await asyncio.sleep(0)
 
         asyncio.run(runner())
-        assert any(
-            e == ("added", "/org/bluez/hci0", ADAPTER_IFACE) for e in seen
-        )
+        assert any(e == ("added", "/org/bluez/hci0", ADAPTER_IFACE) for e in seen)
 
     def test_device_interfaces_added_fires_callback(
         self, monkeypatch: pytest.MonkeyPatch
@@ -208,9 +209,7 @@ class TestInterfacesAdded:
             client = BlueZClient()
             await client.connect()
             await client.subscribe(cb)
-            om = client._bluez_root.get_interface(
-                "org.freedesktop.DBus.ObjectManager"
-            )
+            om = client._bluez_root.get_interface("org.freedesktop.DBus.ObjectManager")
             om._added_cb(
                 "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
                 {DEVICE_IFACE: {"Paired": True, "Trusted": True, "Connected": False}},
@@ -218,19 +217,16 @@ class TestInterfacesAdded:
             await asyncio.sleep(0)
 
         asyncio.run(runner())
-        assert any(
-            e[0] == "added" and DEVICE_IFACE in e[2] for e in seen
-        )
+        assert any(e[0] == "added" and DEVICE_IFACE in e[2] for e in seen)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # subscribe() — InterfacesRemoved signal
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestInterfacesRemoved:
-    def test_removed_callback_fires(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_removed_callback_fires(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "bluetooth_autoconnect.dbus_client.MessageBus",
             lambda *a, **kw: _FakeBus(),
@@ -244,9 +240,7 @@ class TestInterfacesRemoved:
             client = BlueZClient()
             await client.connect()
             await client.subscribe(cb)
-            om = client._bluez_root.get_interface(
-                "org.freedesktop.DBus.ObjectManager"
-            )
+            om = client._bluez_root.get_interface("org.freedesktop.DBus.ObjectManager")
             om._removed_cb(
                 "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
                 [DEVICE_IFACE],
@@ -260,6 +254,7 @@ class TestInterfacesRemoved:
 # ─────────────────────────────────────────────────────────────────────────────
 # subscribe() — PropertiesChanged signal (message_handler)
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestPropertiesChanged:
     def _run_with_message(
@@ -288,9 +283,7 @@ class TestPropertiesChanged:
         asyncio.run(runner())
         return seen
 
-    def test_adapter_powered_on(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_adapter_powered_on(self, monkeypatch: pytest.MonkeyPatch) -> None:
         msg = _make_props_changed_message(
             "/org/bluez/hci0", ADAPTER_IFACE, {"Powered": True}
         )
@@ -302,9 +295,7 @@ class TestPropertiesChanged:
             for e in seen
         )
 
-    def test_device_connected_false(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_device_connected_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         msg = _make_props_changed_message(
             "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
             DEVICE_IFACE,
@@ -312,14 +303,11 @@ class TestPropertiesChanged:
         )
         seen = self._run_with_message(monkeypatch, msg)
         assert any(
-            e[0] == "properties_changed"
-            and e[3].get("Connected") is False
+            e[0] == "properties_changed" and e[3].get("Connected") is False
             for e in seen
         )
 
-    def test_device_rssi_update(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_device_rssi_update(self, monkeypatch: pytest.MonkeyPatch) -> None:
         msg = _make_props_changed_message(
             "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
             DEVICE_IFACE,
@@ -328,9 +316,7 @@ class TestPropertiesChanged:
         seen = self._run_with_message(monkeypatch, msg)
         assert any(e[3].get("RSSI") == -65 for e in seen)
 
-    def test_non_bluez_message_ignored(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_non_bluez_message_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Messages not on /org/bluez paths must be silently dropped."""
         msg = _make_props_changed_message(
             "/org/something/else", ADAPTER_IFACE, {"Powered": True}
@@ -338,9 +324,7 @@ class TestPropertiesChanged:
         seen = self._run_with_message(monkeypatch, msg)
         assert seen == []
 
-    def test_wrong_interface_ignored(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_wrong_interface_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-PropertiesChanged signals must be silently dropped."""
         msg = SimpleNamespace(
             interface="org.freedesktop.DBus.Introspectable",
@@ -356,91 +340,95 @@ class TestPropertiesChanged:
 # Daemon reconnect decisions (full pipeline: signal → _on_dbus_event)
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestDaemonReconnectPipeline:
     """Verify that real D-Bus signal data triggers the correct reconnect flags."""
 
-    @pytest.mark.parametrize("event,path,iface,changed,should_rescan", [
-        # Adapter powered on via PropertiesChanged
-        (
-            "properties_changed",
-            "/org/bluez/hci0",
-            ADAPTER_IFACE,
-            {"Powered": True},
-            True,
-        ),
-        # Adapter powered on via InterfacesAdded
-        (
-            "added",
-            "/org/bluez/hci0",
-            ADAPTER_IFACE,
-            {"Powered": True},
-            True,
-        ),
-        # Adapter powered OFF — must NOT trigger rescan
-        (
-            "properties_changed",
-            "/org/bluez/hci0",
-            ADAPTER_IFACE,
-            {"Powered": False},
-            False,
-        ),
-        # New device object appeared
-        (
-            "added",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {},
-            True,
-        ),
-        # Device disconnected
-        (
-            "properties_changed",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {"Connected": False},
-            True,
-        ),
-        # Device reconnected (Connected=True) — must NOT trigger rescan
-        (
-            "properties_changed",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {"Connected": True},
-            False,
-        ),
-        # Device came back into range (RSSI updated)
-        (
-            "properties_changed",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {"RSSI": -72},
-            True,
-        ),
-        # Device marked trusted → should rescan
-        (
-            "properties_changed",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {"Trusted": True},
-            True,
-        ),
-        # Device paired → should rescan
-        (
-            "properties_changed",
-            "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
-            DEVICE_IFACE,
-            {"Paired": True},
-            True,
-        ),
-        # Unrelated interface — must not trigger rescan
-        (
-            "properties_changed",
-            "/org/bluez/hci0",
-            "org.bluez.GattManager1",
-            {"SomeProperty": True},
-            False,
-        ),
-    ])
+    @pytest.mark.parametrize(
+        "event,path,iface,changed,should_rescan",
+        [
+            # Adapter powered on via PropertiesChanged
+            (
+                "properties_changed",
+                "/org/bluez/hci0",
+                ADAPTER_IFACE,
+                {"Powered": True},
+                True,
+            ),
+            # Adapter powered on via InterfacesAdded
+            (
+                "added",
+                "/org/bluez/hci0",
+                ADAPTER_IFACE,
+                {"Powered": True},
+                True,
+            ),
+            # Adapter powered OFF — must NOT trigger rescan
+            (
+                "properties_changed",
+                "/org/bluez/hci0",
+                ADAPTER_IFACE,
+                {"Powered": False},
+                False,
+            ),
+            # New device object appeared
+            (
+                "added",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {},
+                True,
+            ),
+            # Device disconnected
+            (
+                "properties_changed",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {"Connected": False},
+                True,
+            ),
+            # Device reconnected (Connected=True) — must NOT trigger rescan
+            (
+                "properties_changed",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {"Connected": True},
+                False,
+            ),
+            # Device came back into range (RSSI updated)
+            (
+                "properties_changed",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {"RSSI": -72},
+                True,
+            ),
+            # Device marked trusted → should rescan
+            (
+                "properties_changed",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {"Trusted": True},
+                True,
+            ),
+            # Device paired → should rescan
+            (
+                "properties_changed",
+                "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF",
+                DEVICE_IFACE,
+                {"Paired": True},
+                True,
+            ),
+            # Unrelated interface — must not trigger rescan
+            (
+                "properties_changed",
+                "/org/bluez/hci0",
+                "org.bluez.GattManager1",
+                {"SomeProperty": True},
+                False,
+            ),
+        ],
+    )
     def test_event_triggers_rescan(
         self,
         event: str,
@@ -471,13 +459,19 @@ class TestDaemonReconnectPipeline:
         run_once_calls: list = []
 
         class FakeClient:
-            async def connect(self) -> None: pass
-            async def close(self) -> None: pass
+            async def connect(self) -> None:
+                pass
+
+            async def close(self) -> None:
+                pass
+
             async def subscribe(self, cb) -> None:
                 # Store callback so test can fire it
                 self._cb = cb
+
             async def get_adapters(self):
                 return []  # empty → run_once returns {}
+
             async def get_devices(self, adapter_path=None):
                 return []
 
@@ -496,9 +490,7 @@ class TestDaemonReconnectPipeline:
         async def instant_sleep(_delay: float) -> None:
             return
 
-        monkeypatch.setattr(
-            "bluetooth_autoconnect.daemon.asyncio.sleep", instant_sleep
-        )
+        monkeypatch.setattr("bluetooth_autoconnect.daemon.asyncio.sleep", instant_sleep)
 
         async def runner() -> None:
             # Simulate run_forever startup
@@ -525,14 +517,15 @@ class TestDaemonReconnectPipeline:
             daemon._stop_event.set()
 
         asyncio.run(runner())
-        assert len(run_once_calls) >= 2, (
-            f"Expected run_once called at least twice, got {len(run_once_calls)}"
-        )
+        assert (
+            len(run_once_calls) >= 2
+        ), f"Expected run_once called at least twice, got {len(run_once_calls)}"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Doctor command
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestDoctorCommand:
     """Unit tests for the doctor module without touching real system services."""
@@ -615,9 +608,7 @@ class TestDoctorCommand:
 
         return exit_code, captured.getvalue()
 
-    def test_all_pass_returns_zero(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_all_pass_returns_zero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         code, out = self._make_report(monkeypatch)
         assert code == 0
         assert "PASS" in out
@@ -662,9 +653,7 @@ class TestDoctorCommand:
         # Still passes overall (no hard failures)
         assert code == 0
 
-    def test_no_adapters_returns_nonzero(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_no_adapters_returns_nonzero(self, monkeypatch: pytest.MonkeyPatch) -> None:
         code, out = self._make_report(monkeypatch, adapters=[])
         assert code == 1
         assert "FAIL" in out
@@ -703,10 +692,9 @@ class TestDoctorCommand:
 # CLI: --debug flag and doctor subcommand dispatch
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestCLINewFlags:
-    def test_debug_flag_sets_debug_level(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_debug_flag_sets_debug_level(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import logging
 
         from bluetooth_autoconnect.cli import build_parser
@@ -734,9 +722,7 @@ class TestCLINewFlags:
             called.append(True)
             return 0
 
-        monkeypatch.setattr(
-            "bluetooth_autoconnect.doctor.run_doctor", fake_doctor
-        )
+        monkeypatch.setattr("bluetooth_autoconnect.doctor.run_doctor", fake_doctor)
         from bluetooth_autoconnect.cli import main
 
         # Patch the import inside cli.py so it picks up fake_doctor
@@ -794,6 +780,7 @@ class TestCLINewFlags:
 # ─────────────────────────────────────────────────────────────────────────────
 # logging_setup: configure_logging debug parameter
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestLoggingSetup:
     def test_debug_flag_enables_debug_level(self) -> None:

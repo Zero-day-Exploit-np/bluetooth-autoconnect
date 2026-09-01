@@ -64,11 +64,29 @@ class FakeObjectManager:
     def __init__(self) -> None:
         self.objects = {
             "/org/bluez/hci0": {
-                "org.bluez.Adapter1": {"Alias": "hci0", "Address": "AA:BB:CC:DD:EE:FF", "Powered": True},
-                "org.bluez.Device1": {"Address": "11:22:33:44:55:66", "Name": "Headset", "Adapter": "/org/bluez/hci0", "Paired": True, "Trusted": True, "Connected": False},
+                "org.bluez.Adapter1": {
+                    "Alias": "hci0",
+                    "Address": "AA:BB:CC:DD:EE:FF",
+                    "Powered": True,
+                },
+                "org.bluez.Device1": {
+                    "Address": "11:22:33:44:55:66",
+                    "Name": "Headset",
+                    "Adapter": "/org/bluez/hci0",
+                    "Paired": True,
+                    "Trusted": True,
+                    "Connected": False,
+                },
             },
             "/org/bluez/hci0/dev_01": {
-                "org.bluez.Device1": {"Address": "00:00:00:00:00:01", "Name": "Mouse", "Adapter": "/org/bluez/hci0", "Paired": True, "Trusted": True, "Connected": True},
+                "org.bluez.Device1": {
+                    "Address": "00:00:00:00:00:01",
+                    "Name": "Mouse",
+                    "Adapter": "/org/bluez/hci0",
+                    "Paired": True,
+                    "Trusted": True,
+                    "Connected": True,
+                },
             },
         }
 
@@ -103,8 +121,25 @@ class FakeClient:
         self.connected = False
         self.closed = False
         self.subscribed = False
-        self.adapters = [Adapter(path="/org/bluez/hci0", name="hci0", address="AA:BB:CC:DD:EE:FF", powered=True)]
-        self.devices = [Device(path="/org/bluez/hci0/dev_01", address="11:22:33:44:55:66", name="Headset", adapter_path="/org/bluez/hci0", paired=True, trusted=True, connected=False)]
+        self.adapters = [
+            Adapter(
+                path="/org/bluez/hci0",
+                name="hci0",
+                address="AA:BB:CC:DD:EE:FF",
+                powered=True,
+            )
+        ]
+        self.devices = [
+            Device(
+                path="/org/bluez/hci0/dev_01",
+                address="11:22:33:44:55:66",
+                name="Headset",
+                adapter_path="/org/bluez/hci0",
+                paired=True,
+                trusted=True,
+                connected=False,
+            )
+        ]
 
     async def connect(self) -> None:
         self.connected = True
@@ -151,7 +186,9 @@ def test_config_handles_dict_values() -> None:
     assert cfg.daemon.max_concurrency == 8
 
 
-def test_daemon_run_once_handles_adapters_and_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_daemon_run_once_handles_adapters_and_devices(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     daemon = AutoConnectDaemon(max_concurrency=2)
     daemon.client = FakeClient()
 
@@ -170,10 +207,25 @@ def test_daemon_run_once_handles_adapters_and_devices(monkeypatch: pytest.Monkey
 def test_daemon_event_callbacks_set_rescan(monkeypatch: pytest.MonkeyPatch) -> None:
     daemon = AutoConnectDaemon()
     events = [
-        ("properties_changed", "/org/bluez/hci0", "org.bluez.Adapter1", {"Powered": True}),
+        (
+            "properties_changed",
+            "/org/bluez/hci0",
+            "org.bluez.Adapter1",
+            {"Powered": True},
+        ),
         ("added", "/org/bluez/hci0/dev_2", "org.bluez.Device1", {}),
-        ("properties_changed", "/org/bluez/hci0/dev_2", "org.bluez.Device1", {"Connected": False}),
-        ("properties_changed", "/org/bluez/hci0/dev_2", "org.bluez.Device1", {"RSSI": -30}),
+        (
+            "properties_changed",
+            "/org/bluez/hci0/dev_2",
+            "org.bluez.Device1",
+            {"Connected": False},
+        ),
+        (
+            "properties_changed",
+            "/org/bluez/hci0/dev_2",
+            "org.bluez.Device1",
+            {"RSSI": -30},
+        ),
     ]
     for event in events:
         asyncio.run(daemon._on_dbus_event(*event))
@@ -201,7 +253,9 @@ def test_daemon_run_forever_executes_lifecycle(monkeypatch: pytest.MonkeyPatch) 
     async def fake_run_once():
         return {"11:22:33:44:55:66": True}
 
-    monkeypatch.setattr(daemon, "_install_signal_handlers", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        daemon, "_install_signal_handlers", lambda *args, **kwargs: None
+    )
     monkeypatch.setattr(daemon, "run_once", fake_run_once)
 
     async def _runner() -> None:
@@ -211,8 +265,12 @@ def test_daemon_run_forever_executes_lifecycle(monkeypatch: pytest.MonkeyPatch) 
     assert daemon.client.closed is True
 
 
-def test_logging_setup_uses_verbose_and_journal(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_systemd = SimpleNamespace(JournalHandler=lambda **kwargs: SimpleNamespace(setLevel=lambda level: None))
+def test_logging_setup_uses_verbose_and_journal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_systemd = SimpleNamespace(
+        JournalHandler=lambda **kwargs: SimpleNamespace(setLevel=lambda level: None)
+    )
     monkeypatch.setitem(__import__("sys").modules, "systemd", SimpleNamespace())
     monkeypatch.setitem(__import__("sys").modules, "systemd.journal", fake_systemd)
 
@@ -224,8 +282,13 @@ def test_logging_setup_uses_verbose_and_journal(monkeypatch: pytest.MonkeyPatch)
     assert logger2.level == logging.INFO
 
 
-def test_bluez_client_getters_and_connect_device(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("bluetooth_autoconnect.dbus_client.MessageBus", lambda *args, **kwargs: FakeBus())
+def test_bluez_client_getters_and_connect_device(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "bluetooth_autoconnect.dbus_client.MessageBus",
+        lambda *args, **kwargs: FakeBus(),
+    )
     client = BlueZClient()
     asyncio.run(client.connect())
     adapters = asyncio.run(client.get_adapters())
@@ -245,7 +308,10 @@ def test_bluez_client_getters_and_connect_device(monkeypatch: pytest.MonkeyPatch
 
 
 def test_bluez_client_subscribe_runs_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("bluetooth_autoconnect.dbus_client.MessageBus", lambda *args, **kwargs: FakeBus())
+    monkeypatch.setattr(
+        "bluetooth_autoconnect.dbus_client.MessageBus",
+        lambda *args, **kwargs: FakeBus(),
+    )
     client = BlueZClient()
     asyncio.run(client.connect())
     seen: list[tuple[str, str, str, dict]] = []
@@ -324,7 +390,9 @@ def test_cli_main_handles_unhappy_paths(monkeypatch: pytest.MonkeyPatch) -> None
         async def run_once(self):
             raise BlueZNotAvailableError("missing")
 
-    monkeypatch.setattr("bluetooth_autoconnect.cli.AutoConnectDaemon", MissingBlueZDaemon)
+    monkeypatch.setattr(
+        "bluetooth_autoconnect.cli.AutoConnectDaemon", MissingBlueZDaemon
+    )
     assert main([]) == 2
 
 
@@ -363,7 +431,9 @@ def test_daemon_run_once_handles_empty_and_unpowered_states() -> None:
     assert asyncio.run(daemon.run_once()) == {}
 
     async def _unpowered_adapters():
-        return [Adapter(path="/org/bluez/hci0", name="hci0", address="AA", powered=False)]
+        return [
+            Adapter(path="/org/bluez/hci0", name="hci0", address="AA", powered=False)
+        ]
 
     daemon.client = SimpleNamespace(
         get_adapters=_unpowered_adapters,
@@ -379,7 +449,10 @@ def test_dbus_client_connect_errors_are_translated() -> None:
             raise RuntimeError("boom")
 
     monkeypatcher = pytest.MonkeyPatch()
-    monkeypatcher.setattr("bluetooth_autoconnect.dbus_client.MessageBus", lambda *args, **kwargs: BoomBus())
+    monkeypatcher.setattr(
+        "bluetooth_autoconnect.dbus_client.MessageBus",
+        lambda *args, **kwargs: BoomBus(),
+    )
     try:
         client = BlueZClient()
         with pytest.raises(DBusConnectionError):
@@ -401,7 +474,10 @@ def test_dbus_client_connect_errors_are_translated() -> None:
             return None
 
     monkeypatcher = pytest.MonkeyPatch()
-    monkeypatcher.setattr("bluetooth_autoconnect.dbus_client.MessageBus", lambda *args, **kwargs: MissingBlueZBus())
+    monkeypatcher.setattr(
+        "bluetooth_autoconnect.dbus_client.MessageBus",
+        lambda *args, **kwargs: MissingBlueZBus(),
+    )
     try:
         client = BlueZClient()
         with pytest.raises(BlueZNotAvailableError):

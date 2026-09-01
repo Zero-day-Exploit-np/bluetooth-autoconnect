@@ -34,20 +34,21 @@ from .models import Device
 logger = logging.getLogger("bluetooth_autoconnect.daemon")
 
 # ── Backoff constants ──────────────────────────────────────────────────────────
-_BACKOFF_BASE_SECONDS: float = 60.0      # 1 minute
+_BACKOFF_BASE_SECONDS: float = 60.0  # 1 minute
 _BACKOFF_MULTIPLIER: float = 2.0
-_BACKOFF_MAX_SECONDS: float = 1800.0     # 30 minutes
-_BACKOFF_MAX_LEVEL: int = 5              # 1m 2m 4m 8m 16m → cap
+_BACKOFF_MAX_SECONDS: float = 1800.0  # 30 minutes
+_BACKOFF_MAX_LEVEL: int = 5  # 1m 2m 4m 8m 16m → cap
 
 
 # ── Per-device cooldown tracker ───────────────────────────────────────────────
+
 
 @dataclass
 class _DeviceCooldown:
     """Tracks exponential backoff state for a single device MAC address."""
 
     mac: str
-    level: int = 0                  # number of consecutive failures
+    level: int = 0  # number of consecutive failures
     retry_after: float = field(default_factory=time.monotonic)
 
     def record_failure(self) -> None:
@@ -106,8 +107,7 @@ class _CooldownRegistry:
             entry = self._entries[d.address]
             remaining = max(0.0, entry.retry_after - time.monotonic())
             logger.debug(
-                "periodic scan: skipping mac=%s name=%r"
-                " (backoff, retry_in=%.0fs)",
+                "periodic scan: skipping mac=%s name=%r" " (backoff, retry_in=%.0fs)",
                 d.address,
                 d.name,
                 remaining,
@@ -116,6 +116,7 @@ class _CooldownRegistry:
 
 
 # ── Daemon ────────────────────────────────────────────────────────────────────
+
 
 class AutoConnectDaemon:
     """Event-driven + periodic-scan Bluetooth auto-connect daemon.
@@ -169,9 +170,7 @@ class AutoConnectDaemon:
 
         all_results: dict[str, bool] = {}
         for adapter in powered:
-            logger.debug(
-                "adapter path=%s address=%s", adapter.path, adapter.address
-            )
+            logger.debug("adapter path=%s address=%s", adapter.path, adapter.address)
             devices = await self.client.get_devices(adapter_path=adapter.path)
             eligible = [d for d in devices if d.is_autoconnect_eligible]
             logger.info(
@@ -182,8 +181,7 @@ class AutoConnectDaemon:
             )
             for device in eligible:
                 logger.debug(
-                    "trusted device detected: name=%r mac=%s path=%s"
-                    " connected=%s",
+                    "trusted device detected: name=%r mac=%s path=%s" " connected=%s",
                     device.name,
                     device.address,
                     device.path,
@@ -226,13 +224,9 @@ class AutoConnectDaemon:
             powered = [a for a in adapters if a.powered]
 
             for adapter in powered:
-                devices = await self.client.get_devices(
-                    adapter_path=adapter.path
-                )
+                devices = await self.client.get_devices(adapter_path=adapter.path)
                 eligible = [
-                    d
-                    for d in devices
-                    if d.is_autoconnect_eligible and not d.connected
+                    d for d in devices if d.is_autoconnect_eligible and not d.connected
                 ]
 
                 candidates = self._cooldown.filter_ready(eligible)
@@ -269,9 +263,7 @@ class AutoConnectDaemon:
                         )
                         self._cooldown.reset(addr)
                     else:
-                        logger.debug(
-                            "periodic scan: reconnect failed mac=%s", addr
-                        )
+                        logger.debug("periodic scan: reconnect failed mac=%s", addr)
                         self._cooldown.record_failure(addr)
 
         except Exception:  # noqa: BLE001
@@ -291,9 +283,7 @@ class AutoConnectDaemon:
             )
             return
 
-        logger.debug(
-            "periodic scan started: interval=%.0fs", self.rescan_interval
-        )
+        logger.debug("periodic scan started: interval=%.0fs", self.rescan_interval)
 
         while not self._stop_event.is_set():
             await asyncio.sleep(self.rescan_interval)
@@ -317,24 +307,20 @@ class AutoConnectDaemon:
                 event_type in ("added", "properties_changed")
                 and changed.get("Powered") is True
             ):
-                logger.debug(
-                    "adapter powered on: path=%s — triggering rescan", path
-                )
+                logger.debug("adapter powered on: path=%s — triggering rescan", path)
                 logger.info("Adapter %s powered on; triggering rescan.", path)
                 self._rescan_event.set()
         elif interface == DEVICE_IFACE:
             if event_type == "added":
                 logger.debug(
-                    "new device object appeared: path=%s"
-                    " — triggering rescan",
+                    "new device object appeared: path=%s" " — triggering rescan",
                     path,
                 )
                 self._rescan_event.set()
             elif event_type == "properties_changed":
                 if changed.get("Connected") is False:
                     logger.debug(
-                        "device disconnected: path=%s"
-                        " — scheduling reconnect",
+                        "device disconnected: path=%s" " — scheduling reconnect",
                         path,
                     )
                     logger.info(
@@ -355,31 +341,25 @@ class AutoConnectDaemon:
                     self._rescan_event.set()
                 elif changed.get("Trusted") is True:
                     logger.debug(
-                        "device marked trusted: path=%s"
-                        " — triggering rescan",
+                        "device marked trusted: path=%s" " — triggering rescan",
                         path,
                     )
                     self._rescan_event.set()
                 elif changed.get("Paired") is True:
-                    logger.debug(
-                        "device paired: path=%s — triggering rescan", path
-                    )
+                    logger.debug("device paired: path=%s — triggering rescan", path)
                     self._rescan_event.set()
                 elif changed.get("Connected") is True:
                     # Device reconnected on its own — clear its backoff
                     mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
                     logger.debug(
-                        "device connected externally: path=%s"
-                        " — resetting backoff",
+                        "device connected externally: path=%s" " — resetting backoff",
                         path,
                     )
                     self._cooldown.reset(mac)
 
     # ── Signal handlers ───────────────────────────────────────────────────
 
-    def _install_signal_handlers(
-        self, loop: asyncio.AbstractEventLoop
-    ) -> None:
+    def _install_signal_handlers(self, loop: asyncio.AbstractEventLoop) -> None:
         def _shutdown() -> None:
             logger.info("Shutdown signal received; stopping daemon.")
             self._stop_event.set()

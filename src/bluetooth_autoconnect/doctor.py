@@ -46,6 +46,7 @@ class DoctorReport:
 
 # ── individual checks ─────────────────────────────────────────────────────────
 
+
 def _check_systemd_unit(unit: str) -> CheckResult:
     """Check whether a systemd unit is active."""
     try:
@@ -165,6 +166,7 @@ async def _check_bluez_async() -> tuple[CheckResult, list, list]:
 
 # ── report rendering ──────────────────────────────────────────────────────────
 
+
 def _render(report: DoctorReport) -> None:
     """Print the report to stdout."""
     print(f"\n{_BOLD}bluetooth-autoconnect doctor{_RESET}\n")
@@ -183,17 +185,13 @@ def _render(report: DoctorReport) -> None:
 
     print()
     if report.has_failures:
-        print(
-            f"  {_RED}{_BOLD}Some checks failed."
-            f"  See details above.{_RESET}\n"
-        )
+        print(f"  {_RED}{_BOLD}Some checks failed." f"  See details above.{_RESET}\n")
     else:
-        print(
-            f"  {_GREEN}{_BOLD}All checks passed.{_RESET}\n"
-        )
+        print(f"  {_GREEN}{_BOLD}All checks passed.{_RESET}\n")
 
 
 # ── public entry point ────────────────────────────────────────────────────────
+
 
 def run_doctor() -> int:
     """Run all health checks and return an exit code (0 = all passed)."""

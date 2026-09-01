@@ -38,8 +38,10 @@ from bluetooth_autoconnect.exceptions import (
 
 # ── _unwrap helpers ───────────────────────────────────────────────────────────
 
+
 class FakeVariant:
     """Minimal stand-in for dbus_next.Variant so we can test the Variant branch."""
+
     def __init__(self, value):
         self.value = value
 
@@ -49,6 +51,7 @@ def test_unwrap_variant() -> None:
     from unittest.mock import patch as _patch
 
     import bluetooth_autoconnect.dbus_client as dc
+
     with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
         assert dc._unwrap(FakeVariant(99)) == 99
         assert dc._unwrap(FakeVariant(FakeVariant(7))) == 7
@@ -58,6 +61,7 @@ def test_unwrap_list() -> None:
     from unittest.mock import patch as _patch
 
     import bluetooth_autoconnect.dbus_client as dc
+
     with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
         result = dc._unwrap([FakeVariant(1), FakeVariant(2)])
         assert result == [1, 2]
@@ -67,12 +71,14 @@ def test_unwrap_nested_dict() -> None:
     from unittest.mock import patch as _patch
 
     import bluetooth_autoconnect.dbus_client as dc
+
     with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
         result = dc._unwrap({"a": FakeVariant(10), "b": [FakeVariant(20)]})
         assert result == {"a": 10, "b": [20]}
 
 
 # ── dbus_client: not-connected guards ────────────────────────────────────────
+
 
 def test_get_managed_objects_raises_when_not_connected() -> None:
     client = BlueZClient()
@@ -95,7 +101,10 @@ def test_connect_device_raises_when_not_connected() -> None:
 
 def test_subscribe_raises_when_not_connected() -> None:
     client = BlueZClient()
-    async def noop(*a): pass
+
+    async def noop(*a):
+        pass
+
     with pytest.raises(DBusConnectionError, match="call connect\\(\\) first"):
         asyncio.run(client.subscribe(noop))
 
@@ -108,11 +117,13 @@ def test_get_dbus_daemon_interface_raises_when_not_connected() -> None:
 
 # ── dbus_client: subscribe on_interfaces_removed callback ────────────────────
 
+
 def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cover the on_interfaces_removed inner function in subscribe()."""
 
     class FakeDBusIface:
-        async def call_add_match(self, rule): pass
+        async def call_add_match(self, rule):
+            pass
 
     class FakeObjectManager:
         def __init__(self):
@@ -147,7 +158,8 @@ def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) 
             )
             self.message_handlers = []
 
-        async def connect(self): return self
+        async def connect(self):
+            return self
 
         async def introspect(self, service, path):
             return {}
@@ -158,7 +170,8 @@ def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) 
         def add_message_handler(self, h):
             self.message_handlers.append(h)
 
-        def disconnect(self): pass
+        def disconnect(self):
+            pass
 
     seen: list = []
 
@@ -184,6 +197,7 @@ def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) 
 
 
 # ── daemon: _shutdown and _rescan inner closures ──────────────────────────────
+
 
 def test_signal_handler_shutdown_closure() -> None:
     daemon = AutoConnectDaemon()
@@ -219,6 +233,7 @@ def test_signal_handler_rescan_closure() -> None:
 
 # ── daemon: run_forever fatal connect error ───────────────────────────────────
 
+
 def test_run_forever_propagates_connect_error(monkeypatch: pytest.MonkeyPatch) -> None:
     daemon = AutoConnectDaemon()
 
@@ -226,7 +241,8 @@ def test_run_forever_propagates_connect_error(monkeypatch: pytest.MonkeyPatch) -
         async def connect(self):
             raise DBusConnectionError("cannot connect")
 
-        async def close(self): pass
+        async def close(self):
+            pass
 
     daemon.client = FailClient()
 
@@ -241,7 +257,8 @@ def test_run_forever_propagates_bluez_error(monkeypatch: pytest.MonkeyPatch) -> 
         async def connect(self):
             raise BlueZNotAvailableError("no bluez")
 
-        async def close(self): pass
+        async def close(self):
+            pass
 
     daemon.client = FailClient()
 
@@ -250,6 +267,7 @@ def test_run_forever_propagates_bluez_error(monkeypatch: pytest.MonkeyPatch) -> 
 
 
 # ── daemon: rescan-event branch inside run_forever loop ──────────────────────
+
 
 def test_run_forever_executes_rescan_and_exception_path(
     monkeypatch: pytest.MonkeyPatch,
@@ -267,9 +285,14 @@ def test_run_forever_executes_rescan_and_exception_path(
     call_count = 0
 
     class ControlledClient:
-        async def connect(self): pass
-        async def close(self): pass
-        async def subscribe(self, cb): pass
+        async def connect(self):
+            pass
+
+        async def close(self):
+            pass
+
+        async def subscribe(self, cb):
+            pass
 
     daemon.client = ControlledClient()
 
@@ -298,6 +321,7 @@ def test_run_forever_executes_rescan_and_exception_path(
 
 # ── cli.py: remaining branches ───────────────────────────────────────────────
 
+
 def test_cli_daemon_mode_returns_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     """Cover cli.py:50 — return 0 after run_forever() returns normally."""
 
@@ -319,8 +343,11 @@ def test_cli_partial_failure_returns_one(monkeypatch: pytest.MonkeyPatch) -> Non
     """Cover cli.py:65 — not all(results.values()) → return 1."""
 
     class PartialClient:
-        async def connect(self): pass
-        async def close(self): pass
+        async def connect(self):
+            pass
+
+        async def close(self):
+            pass
 
     class PartialDaemon:
         def __init__(self, *a, **kw):
@@ -337,8 +364,11 @@ def test_cli_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> 
     """Cover cli.py:82-84 — KeyboardInterrupt propagated out of asyncio.run()."""
 
     class InterruptClient:
-        async def connect(self): raise KeyboardInterrupt
-        async def close(self): pass
+        async def connect(self):
+            raise KeyboardInterrupt
+
+        async def close(self):
+            pass
 
     class InterruptDaemon:
         def __init__(self, *a, **kw):
@@ -351,12 +381,17 @@ def test_cli_keyboard_interrupt_returns_130(monkeypatch: pytest.MonkeyPatch) -> 
     assert main([]) == 130
 
 
-def test_cli_generic_bluetooth_error_returns_one(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_cli_generic_bluetooth_error_returns_one(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Cover cli.py:88 — BluetoothAutoConnectError (base class, not DBus subclass)."""
 
     class GenericErrorClient:
-        async def connect(self): raise BluetoothAutoConnectError("something unexpected")
-        async def close(self): pass
+        async def connect(self):
+            raise BluetoothAutoConnectError("something unexpected")
+
+        async def close(self):
+            pass
 
     class GenericErrorDaemon:
         def __init__(self, *a, **kw):
@@ -365,5 +400,7 @@ def test_cli_generic_bluetooth_error_returns_one(monkeypatch: pytest.MonkeyPatch
         async def run_once(self):
             return {}
 
-    monkeypatch.setattr("bluetooth_autoconnect.cli.AutoConnectDaemon", GenericErrorDaemon)
+    monkeypatch.setattr(
+        "bluetooth_autoconnect.cli.AutoConnectDaemon", GenericErrorDaemon
+    )
     assert main([]) == 1

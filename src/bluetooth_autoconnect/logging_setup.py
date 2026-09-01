@@ -30,9 +30,7 @@ def configure_logging(verbose: bool = False, debug: bool = False) -> logging.Log
     try:
         from systemd.journal import JournalHandler  # type: ignore
 
-        journal_handler = JournalHandler(
-            SYSLOG_IDENTIFIER="bluetooth-autoconnect"
-        )
+        journal_handler = JournalHandler(SYSLOG_IDENTIFIER="bluetooth-autoconnect")
         journal_handler.setLevel(level)
         logger.addHandler(journal_handler)
     except ImportError:

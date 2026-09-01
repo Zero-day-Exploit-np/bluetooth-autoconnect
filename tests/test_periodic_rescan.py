@@ -44,6 +44,7 @@ from bluetooth_autoconnect.models import Adapter, Device
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def _make_device(
     mac: str = "AA:BB:CC:DD:EE:FF",
     *,
@@ -75,6 +76,7 @@ _ADAPTER = Adapter(
 # ─────────────────────────────────────────────────────────────────────────────
 # _DeviceCooldown unit tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestDeviceCooldown:
     def test_initially_ready(self) -> None:
@@ -129,6 +131,7 @@ class TestDeviceCooldown:
 # ─────────────────────────────────────────────────────────────────────────────
 # _CooldownRegistry unit tests
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCooldownRegistry:
     def test_unknown_mac_is_ready(self) -> None:
@@ -189,6 +192,7 @@ class TestCooldownRegistry:
 # run_once: cooldown integration
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestRunOnceCooldownIntegration:
     """run_once() must update the cooldown registry based on connect results."""
 
@@ -229,6 +233,7 @@ class TestRunOnceCooldownIntegration:
             daemon.client.get_devices = AsyncMock(return_value=[device])
             # One attempt only so the test finishes quickly
             from bluetooth_autoconnect.connector import RetryPolicy
+
             daemon.policy = RetryPolicy(max_attempts=1)
             daemon.client.connect_device = AsyncMock(side_effect=always_fail)
             await daemon.run_once()
@@ -257,6 +262,7 @@ class TestRunOnceCooldownIntegration:
 # Periodic scan: core scenario
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestPeriodicScanScenario:
     """Full disconnect → fail → return to range → periodic scan reconnects."""
 
@@ -282,13 +288,12 @@ class TestPeriodicScanScenario:
             # Second call (from periodic scan) succeeds
 
         from bluetooth_autoconnect.connector import RetryPolicy
+
         daemon.policy = RetryPolicy(max_attempts=1)
 
         async def runner() -> None:
             daemon.client.get_adapters = AsyncMock(return_value=[_ADAPTER])
-            daemon.client.get_devices = AsyncMock(
-                return_value=[device_disconnected]
-            )
+            daemon.client.get_devices = AsyncMock(return_value=[device_disconnected])
             daemon.client.connect_device = AsyncMock(side_effect=connect_fn)
 
             # Step 1: initial run_once — fails, records backoff
@@ -296,9 +301,7 @@ class TestPeriodicScanScenario:
             assert not daemon._cooldown.is_ready(mac)
 
             # Step 2: fast-forward past the backoff window
-            daemon._cooldown._entries[mac].retry_after = (
-                time.monotonic() - 1
-            )
+            daemon._cooldown._entries[mac].retry_after = time.monotonic() - 1
             assert daemon._cooldown.is_ready(mac)
 
             # Step 3: run one periodic scan iteration manually
@@ -331,9 +334,9 @@ class TestPeriodicScanScenario:
             await daemon._run_one_periodic_scan()
 
         asyncio.run(runner())
-        assert connect_called == [], (
-            "connect_device should not be called when device is in backoff"
-        )
+        assert (
+            connect_called == []
+        ), "connect_device should not be called when device is in backoff"
 
     def test_periodic_scan_disabled_when_interval_is_zero(self) -> None:
         """_periodic_scan_loop must exit immediately when rescan_interval <= 0."""
@@ -388,6 +391,7 @@ class TestPeriodicScanScenario:
 # ─────────────────────────────────────────────────────────────────────────────
 # D-Bus events reset backoff
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestDbusEventBackoffReset:
     """RSSI and Connected=True D-Bus events must clear backoff state."""
@@ -447,6 +451,7 @@ class TestDbusEventBackoffReset:
 # ─────────────────────────────────────────────────────────────────────────────
 # CLI: --rescan-interval flag
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 class TestCLIRescanInterval:
     def test_default_rescan_interval(self) -> None:
@@ -518,6 +523,7 @@ class TestCLIRescanInterval:
 # run_forever: periodic task lifecycle
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class TestRunForeverPeriodicTaskLifecycle:
     """The periodic task must be started and cleanly cancelled on stop."""
 
@@ -537,7 +543,7 @@ class TestRunForeverPeriodicTaskLifecycle:
         # turn cancels this task.
         async def spy_periodic_loop() -> None:
             periodic_started.append(True)
-            daemon._stop_event.set()   # tell run_forever to exit
+            daemon._stop_event.set()  # tell run_forever to exit
             try:
                 await asyncio.sleep(9999)
             except asyncio.CancelledError:
@@ -547,10 +553,17 @@ class TestRunForeverPeriodicTaskLifecycle:
         daemon._periodic_scan_loop = spy_periodic_loop  # type: ignore[method-assign]
 
         class FakeClient:
-            async def connect(self) -> None: pass
-            async def close(self) -> None: pass
-            async def subscribe(self, cb) -> None: pass
-            async def get_adapters(self): return []
+            async def connect(self) -> None:
+                pass
+
+            async def close(self) -> None:
+                pass
+
+            async def subscribe(self, cb) -> None:
+                pass
+
+            async def get_adapters(self):
+                return []
 
         daemon.client = FakeClient()
         monkeypatch.setattr(daemon, "_install_signal_handlers", lambda *a: None)

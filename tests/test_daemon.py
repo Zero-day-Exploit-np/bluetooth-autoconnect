@@ -70,9 +70,7 @@ class TestOnDBusEvent:
         assert daemon._rescan_event.is_set()
 
     @pytest.mark.asyncio
-    async def test_unrelated_interface_ignored(
-        self, daemon: AutoConnectDaemon
-    ) -> None:
+    async def test_unrelated_interface_ignored(self, daemon: AutoConnectDaemon) -> None:
         await daemon._on_dbus_event(
             "properties_changed",
             "/org/bluez/hci0/dev_AA_BB",

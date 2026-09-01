@@ -76,9 +76,7 @@ class BlueZClient:
             self._bluez_root = self._bus.get_proxy_object(
                 BLUEZ_SERVICE, "/", introspection
             )
-            self._object_manager = self._bluez_root.get_interface(
-                OBJECT_MANAGER_IFACE
-            )
+            self._object_manager = self._bluez_root.get_interface(OBJECT_MANAGER_IFACE)
         except Exception as exc:  # noqa: BLE001
             raise BlueZNotAvailableError(
                 "org.bluez is not available on the system bus."
@@ -113,9 +111,7 @@ class BlueZClient:
             )
         return adapters
 
-    async def get_devices(
-        self, adapter_path: str | None = None
-    ) -> list[Device]:
+    async def get_devices(self, adapter_path: str | None = None) -> list[Device]:
         objects = await self.get_managed_objects()
         devices: list[Device] = []
         for path, interfaces in objects.items():
@@ -140,27 +136,19 @@ class BlueZClient:
             )
         return devices
 
-    async def set_adapter_powered(
-        self, adapter_path: str, powered: bool
-    ) -> None:
+    async def set_adapter_powered(self, adapter_path: str, powered: bool) -> None:
         if self._bus is None:
             raise DBusConnectionError(_NOT_CONNECTED)
         introspection = await self._bus.introspect(BLUEZ_SERVICE, adapter_path)
-        proxy = self._bus.get_proxy_object(
-            BLUEZ_SERVICE, adapter_path, introspection
-        )
+        proxy = self._bus.get_proxy_object(BLUEZ_SERVICE, adapter_path, introspection)
         props_iface = proxy.get_interface(PROPERTIES_IFACE)
-        await props_iface.call_set(
-            ADAPTER_IFACE, "Powered", Variant("b", powered)
-        )
+        await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", powered))
 
     async def connect_device(self, device_path: str) -> None:
         if self._bus is None:
             raise DBusConnectionError(_NOT_CONNECTED)
         introspection = await self._bus.introspect(BLUEZ_SERVICE, device_path)
-        proxy = self._bus.get_proxy_object(
-            BLUEZ_SERVICE, device_path, introspection
-        )
+        proxy = self._bus.get_proxy_object(BLUEZ_SERVICE, device_path, introspection)
         device_iface = proxy.get_interface(DEVICE_IFACE)
         await device_iface.call_connect()
 
@@ -200,9 +188,7 @@ class BlueZClient:
         def _on_interfaces_removed(
             path: str, interfaces: list  # type: ignore[type-arg]
         ) -> None:
-            logger.debug(
-                "InterfacesRemoved: path=%s interfaces=%s", path, interfaces
-            )
+            logger.debug("InterfacesRemoved: path=%s interfaces=%s", path, interfaces)
             for iface_name in interfaces:
                 _schedule(callback("removed", path, iface_name, {}))
 
@@ -249,7 +235,5 @@ class BlueZClient:
         if self._bus is None:
             raise DBusConnectionError(_NOT_CONNECTED)
         introspection = await self._bus.introspect(DBUS_SERVICE, DBUS_PATH)
-        proxy = self._bus.get_proxy_object(
-            DBUS_SERVICE, DBUS_PATH, introspection
-        )
+        proxy = self._bus.get_proxy_object(DBUS_SERVICE, DBUS_PATH, introspection)
         return proxy.get_interface(DBUS_SERVICE)

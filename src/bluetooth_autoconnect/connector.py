@@ -65,8 +65,7 @@ async def connect_with_retry(
 
             delay = policy.delay_for_attempt(attempt)
             logger.debug(
-                "connection failed: mac=%s attempt=%d/%d"
-                " error=%s retry_in=%.1fs",
+                "connection failed: mac=%s attempt=%d/%d" " error=%s retry_in=%.1fs",
                 device.address,
                 attempt,
                 policy.max_attempts,
@@ -100,7 +99,9 @@ async def connect_all(
     for device in skipped:
         logger.debug(
             "Skipping %s (paired=%s, trusted=%s)",
-            device, device.paired, device.trusted,
+            device,
+            device.paired,
+            device.trusted,
         )
 
     already_connected = [d for d in eligible if d.connected]
