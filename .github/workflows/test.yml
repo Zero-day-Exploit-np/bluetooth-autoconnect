@@ -64,7 +64,7 @@ jobs:
             container: docker://archlinux:latest
             python-version: '3.13'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
