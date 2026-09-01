@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -26,6 +27,7 @@ _NOT_CONNECTED = "BlueZClient is not connected; call connect() first."
 
 
 def _unwrap(value: Any) -> Any:  # noqa: ANN401
+    """Recursively unwrap dbus_next Variant wrappers into plain Python types."""
     if isinstance(value, Variant):
         return _unwrap(value.value)
     if isinstance(value, dict):
@@ -33,6 +35,26 @@ def _unwrap(value: Any) -> Any:  # noqa: ANN401
     if isinstance(value, list):
         return [_unwrap(v) for v in value]
     return value
+
+
+def _schedule(coro: Any) -> None:  # noqa: ANN401
+    """Schedule a coroutine on the running event loop.
+
+    dbus-next calls synchronous signal callbacks from inside its own message
+    dispatch loop, which already runs on the asyncio event loop.  The correct
+    way to hand off work to that loop from a sync callback is
+    ``asyncio.get_event_loop().create_task()``.
+
+    ``MessageBus.loop`` was removed in newer dbus-next / dbus-fast releases,
+    so we never touch it.
+    """
+    try:
+        loop = asyncio.get_event_loop()
+        loop.create_task(coro)
+    except RuntimeError:
+        # No running loop — happens only in unit tests that call sync helpers
+        # outside an async context.  Log and discard.
+        logger.debug("_schedule: no running event loop, coroutine discarded.")
 
 
 class BlueZClient:
@@ -128,7 +150,9 @@ class BlueZClient:
             BLUEZ_SERVICE, adapter_path, introspection
         )
         props_iface = proxy.get_interface(PROPERTIES_IFACE)
-        await props_iface.call_set(ADAPTER_IFACE, "Powered", Variant("b", powered))
+        await props_iface.call_set(
+            ADAPTER_IFACE, "Powered", Variant("b", powered)
+        )
 
     async def connect_device(self, device_path: str) -> None:
         if self._bus is None:
@@ -141,26 +165,52 @@ class BlueZClient:
         await device_iface.call_connect()
 
     async def subscribe(self, callback: EventCallback) -> None:
+        """Register callbacks for BlueZ object-manager and property signals.
+
+        Three signal sources are wired up:
+          1. InterfacesAdded   — new adapter or device object appeared.
+          2. InterfacesRemoved — adapter or device object removed.
+          3. PropertiesChanged — any property on a BlueZ object changed
+             (e.g. Adapter.Powered, Device.Connected, Device.RSSI).
+
+        All three dispatch to *callback* with the signature::
+
+            callback(event_type, object_path, interface_name, changed_props)
+
+        where *event_type* is one of ``"added"``, ``"removed"``, or
+        ``"properties_changed"``.
+        """
         if self._bus is None or self._object_manager is None:
             raise DBusConnectionError(_NOT_CONNECTED)
 
-        def _on_interfaces_added(path: str, interfaces: dict) -> None:  # type: ignore[type-arg]
+        # ── InterfacesAdded ───────────────────────────────────────────────
+        def _on_interfaces_added(
+            path: str, interfaces: dict  # type: ignore[type-arg]
+        ) -> None:
             unwrapped = _unwrap(interfaces)
+            logger.debug(
+                "InterfacesAdded: path=%s interfaces=%s",
+                path,
+                list(unwrapped.keys()),
+            )
             for iface_name, props in unwrapped.items():
-                self._bus.loop.create_task(  # type: ignore[union-attr]
-                    callback("added", path, iface_name, props)
-                )
+                _schedule(callback("added", path, iface_name, props))
 
-        def _on_interfaces_removed(path: str, interfaces: list) -> None:  # type: ignore[type-arg]
+        # ── InterfacesRemoved ─────────────────────────────────────────────
+        def _on_interfaces_removed(
+            path: str, interfaces: list  # type: ignore[type-arg]
+        ) -> None:
+            logger.debug(
+                "InterfacesRemoved: path=%s interfaces=%s", path, interfaces
+            )
             for iface_name in interfaces:
-                self._bus.loop.create_task(  # type: ignore[union-attr]
-                    callback("removed", path, iface_name, {})
-                )
+                _schedule(callback("removed", path, iface_name, {}))
 
         self._object_manager.on_interfaces_added(_on_interfaces_added)
         self._object_manager.on_interfaces_removed(_on_interfaces_removed)
 
-        def _message_handler(message: Any) -> None:
+        # ── PropertiesChanged (match rule on the system bus) ──────────────
+        def _message_handler(message: Any) -> None:  # noqa: ANN401
             if (
                 message.interface == PROPERTIES_IFACE
                 and message.member == "PropertiesChanged"
@@ -169,7 +219,13 @@ class BlueZClient:
             ):
                 iface_name, changed, _invalidated = message.body
                 unwrapped = _unwrap(changed)
-                self._bus.loop.create_task(  # type: ignore[union-attr]
+                logger.debug(
+                    "PropertiesChanged: path=%s iface=%s changed=%s",
+                    message.path,
+                    iface_name,
+                    list(unwrapped.keys()),
+                )
+                _schedule(
                     callback(
                         "properties_changed",
                         message.path,
@@ -187,6 +243,7 @@ class BlueZClient:
         )
         dbus_iface = await self._get_dbus_daemon_interface()
         await dbus_iface.call_add_match(rule)
+        logger.debug("Subscribed to BlueZ D-Bus signals.")
 
     async def _get_dbus_daemon_interface(self) -> Any:  # noqa: ANN401
         if self._bus is None:

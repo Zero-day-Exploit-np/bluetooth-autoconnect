@@ -34,24 +34,42 @@ async def connect_with_retry(
     policy = policy or RetryPolicy()
 
     for attempt in range(1, policy.max_attempts + 1):
+        logger.debug(
+            "attempting connection: mac=%s path=%s attempt=%d/%d",
+            device.address,
+            device.path,
+            attempt,
+            policy.max_attempts,
+        )
         try:
             await connect_fn(device.path)
-            logger.info("Connected %s on attempt %d", device, attempt)
+            logger.info(
+                "connection succeeded: mac=%s name=%r attempt=%d",
+                device.address,
+                device.name,
+                attempt,
+            )
             return True
         except Exception as exc:  # noqa: BLE001
             if attempt >= policy.max_attempts:
                 logger.warning(
-                    "Giving up on %s after %d attempts: %s",
-                    device, attempt, exc,
+                    "connection failed: mac=%s name=%r"
+                    " attempt=%d/%d error=%s — giving up",
+                    device.address,
+                    device.name,
+                    attempt,
+                    policy.max_attempts,
+                    exc,
                 )
                 raise DeviceConnectionError(device.address, str(exc)) from exc
 
             delay = policy.delay_for_attempt(attempt)
             logger.debug(
-                "Attempt %d/%d failed for %s (%s); retrying in %.1fs",
+                "connection failed: mac=%s attempt=%d/%d"
+                " error=%s retry_in=%.1fs",
+                device.address,
                 attempt,
                 policy.max_attempts,
-                device,
                 exc,
                 delay,
             )

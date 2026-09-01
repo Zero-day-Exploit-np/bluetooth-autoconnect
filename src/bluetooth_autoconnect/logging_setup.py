@@ -9,8 +9,14 @@ LOG_FORMAT = "%(asctime)s %(levelname)-8s %(name)s: %(message)s"
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
-def configure_logging(verbose: bool = False) -> logging.Logger:
-    level = logging.DEBUG if verbose else logging.INFO
+def configure_logging(verbose: bool = False, debug: bool = False) -> logging.Logger:
+    """Configure the root ``bluetooth_autoconnect`` logger.
+
+    Args:
+        verbose: Deprecated alias for *debug*; kept for backward compat.
+        debug:   Enable DEBUG-level output.
+    """
+    level = logging.DEBUG if (verbose or debug) else logging.INFO
     logger = logging.getLogger("bluetooth_autoconnect")
     logger.setLevel(level)
     logger.propagate = False
@@ -24,7 +30,9 @@ def configure_logging(verbose: bool = False) -> logging.Logger:
     try:
         from systemd.journal import JournalHandler  # type: ignore
 
-        journal_handler = JournalHandler(SYSLOG_IDENTIFIER="bluetooth-autoconnect")
+        journal_handler = JournalHandler(
+            SYSLOG_IDENTIFIER="bluetooth-autoconnect"
+        )
         journal_handler.setLevel(level)
         logger.addHandler(journal_handler)
     except ImportError:

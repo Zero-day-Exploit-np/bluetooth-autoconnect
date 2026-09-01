@@ -1,31 +1,154 @@
-"""Long-running daemon mode."""
+"""Long-running daemon mode with periodic background rescanning.
+
+Architecture
+------------
+Two concurrent tasks run inside ``run_forever()``:
+
+1. **Event loop** — waits on ``_rescan_event`` (set by D-Bus callbacks) or
+   ``_stop_event``.  Fires immediately when a D-Bus signal arrives.
+
+2. **Periodic scanner** — wakes every *rescan_interval* seconds and attempts
+   to reconnect any disconnected trusted device that is not in backoff.
+
+Per-device backoff
+------------------
+After every failed reconnect the device is put into a cooldown whose
+duration grows exponentially (1 min → 2 min → 4 min → 8 min → 16 min,
+capped at 30 min).  When a device reconnects successfully the cooldown
+entry is removed so the next disconnect starts the sequence over.
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import signal
+import time
+from dataclasses import dataclass, field
 
 from .connector import RetryPolicy, connect_all
 from .dbus_client import ADAPTER_IFACE, DEVICE_IFACE, BlueZClient
 from .exceptions import BlueZNotAvailableError, DBusConnectionError
+from .models import Device
 
 logger = logging.getLogger("bluetooth_autoconnect.daemon")
 
+# ── Backoff constants ──────────────────────────────────────────────────────────
+_BACKOFF_BASE_SECONDS: float = 60.0      # 1 minute
+_BACKOFF_MULTIPLIER: float = 2.0
+_BACKOFF_MAX_SECONDS: float = 1800.0     # 30 minutes
+_BACKOFF_MAX_LEVEL: int = 5              # 1m 2m 4m 8m 16m → cap
+
+
+# ── Per-device cooldown tracker ───────────────────────────────────────────────
+
+@dataclass
+class _DeviceCooldown:
+    """Tracks exponential backoff state for a single device MAC address."""
+
+    mac: str
+    level: int = 0                  # number of consecutive failures
+    retry_after: float = field(default_factory=time.monotonic)
+
+    def record_failure(self) -> None:
+        """Advance the backoff level and schedule the next allowed attempt."""
+        self.level = min(self.level + 1, _BACKOFF_MAX_LEVEL)
+        delay = min(
+            _BACKOFF_BASE_SECONDS * (_BACKOFF_MULTIPLIER ** (self.level - 1)),
+            _BACKOFF_MAX_SECONDS,
+        )
+        self.retry_after = time.monotonic() + delay
+        logger.debug(
+            "backoff: mac=%s level=%d next_attempt_in=%.0fs",
+            self.mac,
+            self.level,
+            delay,
+        )
+
+    @property
+    def ready(self) -> bool:
+        """Return True when the cooldown period has elapsed."""
+        return time.monotonic() >= self.retry_after
+
+
+class _CooldownRegistry:
+    """Thread-safe (single-loop) registry of per-device cooldowns."""
+
+    def __init__(self) -> None:
+        self._entries: dict[str, _DeviceCooldown] = {}
+
+    def is_ready(self, mac: str) -> bool:
+        """Return True if the device may be retried right now."""
+        entry = self._entries.get(mac)
+        return entry is None or entry.ready
+
+    def record_failure(self, mac: str) -> None:
+        entry = self._entries.get(mac)
+        if entry is None:
+            entry = _DeviceCooldown(mac=mac)
+            self._entries[mac] = entry
+        entry.record_failure()
+
+    def reset(self, mac: str) -> None:
+        """Remove cooldown — called when a device successfully connects."""
+        self._entries.pop(mac, None)
+        logger.debug("backoff reset: mac=%s", mac)
+
+    def filter_ready(self, devices: list[Device]) -> list[Device]:
+        """Return only devices that are past their backoff window."""
+        ready, skipped = [], []
+        for d in devices:
+            if self.is_ready(d.address):
+                ready.append(d)
+            else:
+                skipped.append(d)
+        for d in skipped:
+            entry = self._entries[d.address]
+            remaining = max(0.0, entry.retry_after - time.monotonic())
+            logger.debug(
+                "periodic scan: skipping mac=%s name=%r"
+                " (backoff, retry_in=%.0fs)",
+                d.address,
+                d.name,
+                remaining,
+            )
+        return ready
+
+
+# ── Daemon ────────────────────────────────────────────────────────────────────
 
 class AutoConnectDaemon:
+    """Event-driven + periodic-scan Bluetooth auto-connect daemon.
+
+    Args:
+        policy:           Per-attempt retry policy for a single connect call.
+        max_concurrency:  Max simultaneous connect calls.
+        rescan_interval:  Seconds between periodic background scans.
+                          Set to 0 to disable periodic scanning entirely.
+    """
+
     def __init__(
         self,
         policy: RetryPolicy | None = None,
         max_concurrency: int = 5,
+        rescan_interval: float = 30.0,
     ) -> None:
         self.policy = policy or RetryPolicy()
         self.max_concurrency = max_concurrency
+        self.rescan_interval = rescan_interval
         self.client = BlueZClient()
         self._stop_event = asyncio.Event()
         self._rescan_event = asyncio.Event()
+        self._cooldown = _CooldownRegistry()
+
+    # ── Core scan-and-connect ─────────────────────────────────────────────
 
     async def run_once(self) -> dict[str, bool]:
+        """Enumerate adapters/devices, attempt to connect all eligible ones.
+
+        Returns a dict mapping MAC address → success bool.  The cooldown
+        registry is updated: failures advance backoff, successes reset it.
+        """
         adapters = await self.client.get_adapters()
         if not adapters:
             logger.warning("No Bluetooth adapters found.")
@@ -46,6 +169,9 @@ class AutoConnectDaemon:
 
         all_results: dict[str, bool] = {}
         for adapter in powered:
+            logger.debug(
+                "adapter path=%s address=%s", adapter.path, adapter.address
+            )
             devices = await self.client.get_devices(adapter_path=adapter.path)
             eligible = [d for d in devices if d.is_autoconnect_eligible]
             logger.info(
@@ -54,12 +180,28 @@ class AutoConnectDaemon:
                 len(devices),
                 len(eligible),
             )
+            for device in eligible:
+                logger.debug(
+                    "trusted device detected: name=%r mac=%s path=%s"
+                    " connected=%s",
+                    device.name,
+                    device.address,
+                    device.path,
+                    device.connected,
+                )
             results = await connect_all(
                 devices,
                 self.client.connect_device,
                 policy=self.policy,
                 max_concurrency=self.max_concurrency,
             )
+            for addr, ok in results.items():
+                if ok:
+                    logger.debug("connection succeeded: mac=%s", addr)
+                    self._cooldown.reset(addr)
+                else:
+                    logger.debug("connection failed: mac=%s", addr)
+                    self._cooldown.record_failure(addr)
             all_results.update(results)
 
         succeeded = sum(1 for ok in all_results.values() if ok)
@@ -69,6 +211,99 @@ class AutoConnectDaemon:
             len(all_results),
         )
         return all_results
+
+    # ── Periodic scan ─────────────────────────────────────────────────────
+
+    async def _run_one_periodic_scan(self) -> None:
+        """Execute a single periodic-scan pass: enumerate and reconnect.
+
+        Extracted from ``_periodic_scan_loop`` so tests can drive it directly
+        without waiting for the sleep timer.
+        """
+        logger.debug("periodic rescan started")
+        try:
+            adapters = await self.client.get_adapters()
+            powered = [a for a in adapters if a.powered]
+
+            for adapter in powered:
+                devices = await self.client.get_devices(
+                    adapter_path=adapter.path
+                )
+                eligible = [
+                    d
+                    for d in devices
+                    if d.is_autoconnect_eligible and not d.connected
+                ]
+
+                candidates = self._cooldown.filter_ready(eligible)
+
+                if not candidates:
+                    logger.debug(
+                        "periodic scan: no candidates on %s"
+                        " (all connected or in backoff)",
+                        adapter.name,
+                    )
+                    continue
+
+                for device in candidates:
+                    logger.debug(
+                        "periodic scan: disconnected trusted device"
+                        " found — mac=%s name=%r path=%s",
+                        device.address,
+                        device.name,
+                        device.path,
+                    )
+
+                results = await connect_all(
+                    candidates,
+                    self.client.connect_device,
+                    policy=self.policy,
+                    max_concurrency=self.max_concurrency,
+                )
+
+                for addr, ok in results.items():
+                    if ok:
+                        logger.info(
+                            "periodic scan: reconnect successful mac=%s",
+                            addr,
+                        )
+                        self._cooldown.reset(addr)
+                    else:
+                        logger.debug(
+                            "periodic scan: reconnect failed mac=%s", addr
+                        )
+                        self._cooldown.record_failure(addr)
+
+        except Exception:  # noqa: BLE001
+            logger.exception("Error during periodic scan")
+
+    async def _periodic_scan_loop(self) -> None:
+        """Background task: reconnect disconnected devices every N seconds.
+
+        Devices in their backoff window are skipped.  When a device that
+        previously failed is now reachable, the reconnect succeeds and the
+        backoff entry is removed so the next disconnect starts fresh.
+        """
+        if self.rescan_interval <= 0:
+            logger.debug(
+                "periodic scan disabled (rescan_interval=%.0f)",
+                self.rescan_interval,
+            )
+            return
+
+        logger.debug(
+            "periodic scan started: interval=%.0fs", self.rescan_interval
+        )
+
+        while not self._stop_event.is_set():
+            await asyncio.sleep(self.rescan_interval)
+
+            if self._stop_event.is_set():
+                break
+
+            await self._run_one_periodic_scan()
+
+    # ── D-Bus event callbacks ─────────────────────────────────────────────
 
     async def _on_dbus_event(
         self,
@@ -82,21 +317,65 @@ class AutoConnectDaemon:
                 event_type in ("added", "properties_changed")
                 and changed.get("Powered") is True
             ):
+                logger.debug(
+                    "adapter powered on: path=%s — triggering rescan", path
+                )
                 logger.info("Adapter %s powered on; triggering rescan.", path)
                 self._rescan_event.set()
         elif interface == DEVICE_IFACE:
             if event_type == "added":
-                logger.debug("New device object appeared: %s", path)
+                logger.debug(
+                    "new device object appeared: path=%s"
+                    " — triggering rescan",
+                    path,
+                )
                 self._rescan_event.set()
             elif event_type == "properties_changed":
                 if changed.get("Connected") is False:
+                    logger.debug(
+                        "device disconnected: path=%s"
+                        " — scheduling reconnect",
+                        path,
+                    )
                     logger.info(
-                        "Device %s disconnected; will attempt reconnect.", path
+                        "Device %s disconnected; will attempt reconnect.",
+                        path,
                     )
                     self._rescan_event.set()
                 elif "RSSI" in changed:
-                    logger.debug("Device %s is back in range.", path)
+                    # Device advertisement seen — it's back in range
+                    mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
+                    logger.debug(
+                        "device back in range: path=%s rssi=%s"
+                        " — resetting backoff and triggering rescan",
+                        path,
+                        changed.get("RSSI"),
+                    )
+                    self._cooldown.reset(mac)
                     self._rescan_event.set()
+                elif changed.get("Trusted") is True:
+                    logger.debug(
+                        "device marked trusted: path=%s"
+                        " — triggering rescan",
+                        path,
+                    )
+                    self._rescan_event.set()
+                elif changed.get("Paired") is True:
+                    logger.debug(
+                        "device paired: path=%s — triggering rescan", path
+                    )
+                    self._rescan_event.set()
+                elif changed.get("Connected") is True:
+                    # Device reconnected on its own — clear its backoff
+                    mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
+                    logger.debug(
+                        "device connected externally: path=%s"
+                        " — resetting backoff",
+                        path,
+                    )
+                    self._cooldown.reset(mac)
+
+    # ── Signal handlers ───────────────────────────────────────────────────
 
     def _install_signal_handlers(
         self, loop: asyncio.AbstractEventLoop
@@ -113,7 +392,10 @@ class AutoConnectDaemon:
         loop.add_signal_handler(signal.SIGINT, _shutdown)
         loop.add_signal_handler(signal.SIGHUP, _rescan)
 
+    # ── Main entry point ──────────────────────────────────────────────────
+
     async def run_forever(self) -> None:
+        """Start the daemon: event loop + periodic scanner run concurrently."""
         try:
             await self.client.connect()
         except (DBusConnectionError, BlueZNotAvailableError) as exc:
@@ -125,7 +407,15 @@ class AutoConnectDaemon:
 
         await self.client.subscribe(self._on_dbus_event)
         logger.info("Subscribed to BlueZ D-Bus events.")
+
+        # Initial scan on startup
         await self.run_once()
+
+        # Launch the periodic scanner as a background task
+        periodic_task = asyncio.create_task(
+            self._periodic_scan_loop(),
+            name="periodic-scan",
+        )
 
         try:
             while not self._stop_event.is_set():
@@ -149,5 +439,10 @@ class AutoConnectDaemon:
                     except Exception:  # noqa: BLE001
                         logger.exception("Error during rescan pass")
         finally:
+            periodic_task.cancel()
+            try:
+                await periodic_task
+            except asyncio.CancelledError:
+                pass
             await self.client.close()
             logger.info("Daemon stopped.")

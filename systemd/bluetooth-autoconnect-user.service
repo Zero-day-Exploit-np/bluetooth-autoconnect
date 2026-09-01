@@ -1,25 +1,24 @@
 [Unit]
 Description=Bluetooth Auto-Connect (per-user daemon)
 Documentation=https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect
-# bluetooth.target is a system target and is NOT visible in the user instance.
-# We simply order after default.target so the session is fully up before
-# we try to reach the D-Bus system bus.
+# bluetooth.target is a system target; it is NOT visible in the user
+# manager instance.  Order after default.target so the session is up
+# before we try to reach the D-Bus system bus.
 After=default.target
+# Restart-rate limiting belongs in [Unit], not [Service] (systemd >= 230).
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
 # %h expands to the user's home directory (requires systemd >= 236).
-# For older systems, replace %h with the absolute home path or use
-# a wrapper that resolves $HOME at runtime.
 ExecStart=%h/.local/bin/bluetooth-autoconnect --daemon
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 KillSignal=SIGTERM
 SendSIGHUP=no
 
-# Hardening (subset supported by user instances)
+# Hardening (subset supported by user manager instances)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=false

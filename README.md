@@ -95,15 +95,18 @@ For proper dependency tracking and package-manager-managed installs, see the gui
 ## Usage
 
 ```
-bluetooth-autoconnect [--daemon] [--verbose] [--max-attempts N] [--max-concurrency N] [--version]
+bluetooth-autoconnect [--daemon] [--debug] [--rescan-interval SECONDS]
+                      [--max-attempts N] [--max-concurrency N] [--version]
+                      [doctor]
 ```
 
 | Command | Behaviour |
 |---|---|
 | `bluetooth-autoconnect` | Scan all powered adapters, connect every paired+trusted device once, then exit. |
-| `bluetooth-autoconnect --daemon` | Run continuously. Reconnects devices as D-Bus events arrive. |
-| `bluetooth-autoconnect --verbose` | Enable debug-level logging (combine with either mode). |
+| `bluetooth-autoconnect --daemon` | Run continuously. Reconnects via D-Bus events **and** periodic background scans. |
+| `bluetooth-autoconnect --debug` | Enable DEBUG-level structured logging (combine with either mode). |
 | `bluetooth-autoconnect --version` | Print installed version and exit. |
+| `bluetooth-autoconnect doctor` | Run health checks and show PASS/FAIL output. |
 
 ### Options
 
@@ -111,6 +114,7 @@ bluetooth-autoconnect [--daemon] [--verbose] [--max-attempts N] [--max-concurren
 |---|---|---|
 | `--max-attempts N` | 5 | Connection attempts per device before giving up. |
 | `--max-concurrency N` | 5 | Max simultaneous connection attempts. |
+| `--rescan-interval SECONDS` | 30 | Seconds between periodic background scans. Set to `0` to disable. |
 
 ### Exit codes
 
@@ -130,11 +134,20 @@ bluetooth-autoconnect
 # Run as a daemon (what the systemd service does)
 bluetooth-autoconnect --daemon
 
-# Debug a device that won't connect
-bluetooth-autoconnect --daemon --verbose
+# Debug a device that won't reconnect — verbose structured logs
+bluetooth-autoconnect --daemon --debug
+
+# Scan more aggressively: every 10 seconds
+bluetooth-autoconnect --daemon --rescan-interval 10
+
+# Disable periodic scanning, rely on D-Bus events only
+bluetooth-autoconnect --daemon --rescan-interval 0
 
 # Be more patient with a flaky headset
 bluetooth-autoconnect --max-attempts 10
+
+# Run health checks
+bluetooth-autoconnect doctor
 ```
 
 ---
@@ -212,11 +225,14 @@ The default config lives at `/etc/bluetooth-autoconnect/config.yaml`. It is not 
 retry:
   max_attempts: 5      # attempts per device before giving up
   base_delay: 1.0      # seconds before first retry
-  max_delay: 60.0      # cap on backoff delay
+  max_delay: 60.0      # cap on per-attempt backoff delay
   multiplier: 2.0      # exponential backoff factor
 
 daemon:
-  scan_interval: 30    # seconds between passive rescans
+  # Seconds between periodic background rescans (0 = disabled).
+  # This is the primary fix for devices that return to range without
+  # generating a BlueZ D-Bus event (see Automatic Reconnect Behavior).
+  rescan_interval_seconds: 30
   max_concurrency: 5   # simultaneous connection attempts
 
 logging:
@@ -246,6 +262,87 @@ To trust an already-paired device:
 
 ```bash
 bluetoothctl trust AA:BB:CC:DD:EE:FF
+```
+
+---
+
+## Automatic Reconnect Behavior
+
+bluetooth-autoconnect uses **two complementary mechanisms** to ensure devices reconnect as reliably as possible.
+
+### 1. Event-driven reconnect (instant)
+
+The daemon subscribes to BlueZ D-Bus signals. When one of the following events arrives, an immediate reconnect scan is triggered:
+
+| Event | What happened |
+|---|---|
+| `Adapter.Powered = true` | Bluetooth adapter was switched on |
+| `InterfacesAdded` (Device) | A known device object appeared on the bus |
+| `Device.Connected = false` | A connected device dropped off |
+| `Device.RSSI` updated | Device advertisement seen — device is back in range |
+| `Device.Trusted = true` | A device was just trusted |
+| `Device.Paired = true` | A device was just paired |
+
+This covers the most common cases: locking/unlocking a laptop, turning Bluetooth off and on, or a device reconnecting from its own side.
+
+### 2. Periodic background scan (the reconnect gap fix)
+
+Some devices go out of range and come back **without generating any D-Bus event** — for example, headphones that wake slowly, or devices on noisy RF channels. In these cases the event-driven path never fires, so the daemon would never retry.
+
+The periodic scanner wakes up every `rescan_interval_seconds` (default: 30 s), enumerates all disconnected trusted devices, and attempts to reconnect any that are not in their backoff window.
+
+```
+Timeline example:
+
+t=0s    Device disconnects  → immediate reconnect attempt (fails: page-timeout)
+t=1s    Backoff: wait 60 s
+t=61s   Periodic scan fires → device still unreachable → fail (backoff: 120 s)
+t=181s  Periodic scan fires → device still unreachable → fail (backoff: 240 s)
+...
+t=Xm    Device returns to range (no D-Bus event!)
+t=Xm+30s Periodic scan fires → reconnect succeeds → backoff cleared
+```
+
+Control this with `--rescan-interval`:
+
+```bash
+bluetooth-autoconnect --daemon --rescan-interval 30   # default
+bluetooth-autoconnect --daemon --rescan-interval 10   # more aggressive
+bluetooth-autoconnect --daemon --rescan-interval 0    # disable (events only)
+```
+
+Or in `/etc/bluetooth-autoconnect/config.yaml`:
+
+```yaml
+daemon:
+  rescan_interval_seconds: 30   # 0 = disabled
+```
+
+### Per-device smart backoff
+
+To avoid hammering an unreachable device, each MAC address has its own backoff state independent of all others. After each failed reconnect attempt the cooldown doubles:
+
+| Failure # | Wait before next attempt |
+|---|---|
+| 1 | 1 minute |
+| 2 | 2 minutes |
+| 3 | 4 minutes |
+| 4 | 8 minutes |
+| 5+ | 16 minutes (maximum: 30 minutes) |
+
+The backoff is **reset immediately** when:
+- A reconnect attempt succeeds.
+- BlueZ reports `Device.RSSI` (device advertisement seen — device is in range).
+- BlueZ reports `Device.Connected = true` (device connected on its own).
+
+This means that if your headset turns itself on, the daemon will reconnect to it in at most one `rescan_interval` cycle — typically within 30 seconds.
+
+### Forcing an immediate rescan
+
+At any time:
+
+```bash
+sudo systemctl kill -s SIGHUP bluetooth-autoconnect
 ```
 
 ---

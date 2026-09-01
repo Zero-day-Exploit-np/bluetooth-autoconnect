@@ -3,17 +3,24 @@ retry:
   base_delay: 1.0
   max_delay: 60.0
   multiplier: 2.0
+
 logging:
   level: INFO
   structured: true
   rotate: weekly
+
 daemon:
-  scan_interval: 30
-  adapter: null
+  # Seconds between periodic background rescans that reconnect devices
+  # which returned to range without generating a D-Bus event.
+  # Set to 0 to disable periodic scanning entirely.
+  rescan_interval_seconds: 30
+  scan_interval: 30          # legacy alias (same value)
   max_concurrency: 5
   enable_automatic_reconnect: true
+
 device_priorities:
   default: 100
-  AA:BB:CC:DD:EE:FF: 250
+  # AA:BB:CC:DD:EE:FF: 250   ← example; uncomment and set your device MAC
+
 blacklist: []
 whitelist: []

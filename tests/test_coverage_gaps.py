@@ -254,16 +254,16 @@ def test_run_forever_propagates_bluez_error(monkeypatch: pytest.MonkeyPatch) -> 
 def test_run_forever_executes_rescan_and_exception_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Cover daemon.py lines 101-116: the rescan-event branch and the exception-swallow path.
+    """Cover the rescan-event branch and exception-swallow path in run_forever.
 
     Strategy:
       - Initial run_once (call 1) sets the rescan event → loop picks it up.
-      - Second run_once (call 2, inside rescan branch) raises → exception is swallowed.
-      - After the exception the loop continues; we set _stop_event so it exits cleanly.
-    We patch asyncio.sleep to a no-op (just `return`) so the 1 s debounce is instant,
-    but we must NOT call asyncio.sleep inside the replacement (infinite recursion).
+      - Second run_once (call 2, inside rescan branch) raises → swallowed.
+      - After the exception the loop continues; _stop_event exits cleanly.
+    rescan_interval=0 disables the periodic scanner so instant_sleep does
+    not cause a tight loop inside _periodic_scan_loop.
     """
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(rescan_interval=0)
     call_count = 0
 
     class ControlledClient:
@@ -273,7 +273,6 @@ def test_run_forever_executes_rescan_and_exception_path(
 
     daemon.client = ControlledClient()
 
-    # Capture the real sleep before patching so we can avoid calling the patched version.
     async def instant_sleep(_delay):
         return  # do not call asyncio.sleep here — that would recurse
 
@@ -284,11 +283,9 @@ def test_run_forever_executes_rescan_and_exception_path(
         nonlocal call_count
         call_count += 1
         if call_count == 1:
-            # Trigger one rescan event so the loop branch executes.
             daemon._rescan_event.set()
             return {}
-        # call_count >= 2: raise once (exception-swallow path), then stop.
-        daemon._stop_event.set()   # ensure we exit the while loop after this
+        daemon._stop_event.set()
         if call_count == 2:
             raise RuntimeError("transient rescan error")
         return {}
