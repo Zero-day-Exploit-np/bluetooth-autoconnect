@@ -28,6 +28,9 @@ def configure_logging(verbose: bool = False) -> logging.Logger:
         journal_handler.setLevel(level)
         logger.addHandler(journal_handler)
     except ImportError:
-        logger.debug("python3-systemd not installed; relying on stdout capture for journal logging.")
+        logger.debug(
+            "python3-systemd not installed;"
+            " relying on stdout capture for journal logging."
+        )
 
     return logger

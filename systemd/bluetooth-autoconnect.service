@@ -1,9 +1,8 @@
 [Unit]
 Description=Bluetooth Auto-Connect (system-wide daemon)
-Documentation=https://github.com/example/bluetooth-autoconnect
-After=bluetooth.target bluetooth.service dbus.service
+Documentation=https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect
+After=bluetooth.target bluetooth.service dbus.socket
 Wants=bluetooth.target
-Requires=dbus.service
 
 [Service]
 Type=simple
@@ -29,6 +28,10 @@ ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictAddressFamilies=AF_UNIX AF_NETLINK
+
+LockPersonality=true
+RestrictNamespaces=true
+PrivateNetwork=true
 
 [Install]
 WantedBy=multi-user.target

@@ -7,7 +7,12 @@ from types import SimpleNamespace
 import pytest
 
 from bluetooth_autoconnect.cli import main
-from bluetooth_autoconnect.config import AutoConnectConfig, DaemonConfig, LoggingConfig, RetryConfig
+from bluetooth_autoconnect.config import (
+    AutoConnectConfig,
+    DaemonConfig,
+    LoggingConfig,
+    RetryConfig,
+)
 from bluetooth_autoconnect.daemon import AutoConnectDaemon
 from bluetooth_autoconnect.dbus_client import BlueZClient
 from bluetooth_autoconnect.exceptions import BlueZNotAvailableError, DBusConnectionError

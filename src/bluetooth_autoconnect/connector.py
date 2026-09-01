@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Awaitable, Callable
 
 from .exceptions import DeviceConnectionError
 from .models import Device
@@ -40,7 +40,10 @@ async def connect_with_retry(
             return True
         except Exception as exc:  # noqa: BLE001
             if attempt >= policy.max_attempts:
-                logger.warning("Giving up on %s after %d attempts: %s", device, attempt, exc)
+                logger.warning(
+                    "Giving up on %s after %d attempts: %s",
+                    device, attempt, exc,
+                )
                 raise DeviceConnectionError(device.address, str(exc)) from exc
 
             delay = policy.delay_for_attempt(attempt)
@@ -77,7 +80,10 @@ async def connect_all(
     eligible = [d for d in devices if d.is_autoconnect_eligible]
     skipped = [d for d in devices if not d.is_autoconnect_eligible]
     for device in skipped:
-        logger.debug("Skipping %s (paired=%s, trusted=%s)", device, device.paired, device.trusted)
+        logger.debug(
+            "Skipping %s (paired=%s, trusted=%s)",
+            device, device.paired, device.trusted,
+        )
 
     already_connected = [d for d in eligible if d.connected]
     to_connect = [d for d in eligible if not d.connected]

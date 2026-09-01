@@ -7,11 +7,16 @@ import asyncio
 import inspect
 import logging
 import sys
+from typing import Any
 
 from . import __version__
 from .connector import RetryPolicy
 from .daemon import AutoConnectDaemon
-from .exceptions import BlueZNotAvailableError, BluetoothAutoConnectError, DBusConnectionError
+from .exceptions import (
+    BluetoothAutoConnectError,
+    BlueZNotAvailableError,
+    DBusConnectionError,
+)
 from .logging_setup import configure_logging
 
 logger = logging.getLogger("bluetooth_autoconnect.cli")
@@ -20,7 +25,10 @@ logger = logging.getLogger("bluetooth_autoconnect.cli")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="bluetooth-autoconnect",
-        description="Automatically detect all paired and trusted Bluetooth devices and reconnect them.",
+        description=(
+            "Automatically detect all paired and trusted Bluetooth devices"
+            " and reconnect them."
+        ),
         epilog=(
             "Examples:\n"
             "  bluetooth-autoconnect                 "
@@ -33,28 +41,50 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--daemon", action="store_true", help="Run as a background service.")
-    parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
-    parser.add_argument("--max-attempts", type=int, default=5, metavar="N", help="Maximum connection attempts per device before giving up.")
-    parser.add_argument("--max-concurrency", type=int, default=5, metavar="N", help="Maximum number of devices to connect simultaneously.")
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--daemon", action="store_true", help="Run as a background service."
+    )
+    parser.add_argument(
+        "--verbose", action="store_true", help="Enable debug logging."
+    )
+    parser.add_argument(
+        "--max-attempts",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Maximum connection attempts per device before giving up.",
+    )
+    parser.add_argument(
+        "--max-concurrency",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Maximum number of devices to connect simultaneously.",
+    )
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}"
+    )
     return parser
 
 
 async def _async_main(args: argparse.Namespace) -> int:
     policy = RetryPolicy(max_attempts=args.max_attempts)
 
-    async def _await_if_needed(result):
+    async def _await_if_needed(result: Any) -> Any:
         if inspect.isawaitable(result):
             return await result
         return result
 
     if args.daemon:
-        daemon = AutoConnectDaemon(policy=policy, max_concurrency=args.max_concurrency)
+        daemon = AutoConnectDaemon(
+            policy=policy, max_concurrency=args.max_concurrency
+        )
         await daemon.run_forever()
         return 0
 
-    daemon = AutoConnectDaemon(policy=policy, max_concurrency=args.max_concurrency)
+    daemon = AutoConnectDaemon(
+        policy=policy, max_concurrency=args.max_concurrency
+    )
     try:
         await _await_if_needed(daemon.client.connect())
         results = await daemon.run_once()

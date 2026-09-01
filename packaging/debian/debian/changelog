@@ -1,9 +1,9 @@
 bluetooth-autoconnect (1.0.0-1) unstable; urgency=medium
 
-  * Initial release.
+  * Initial release. (Closes: #XXXXXX)
     - Detect paired and trusted Bluetooth devices via BlueZ D-Bus.
     - One-shot scan-and-connect mode and long-running --daemon mode.
     - Exponential backoff retries, concurrent connections.
     - System-wide and per-user systemd services.
 
- -- bluetooth-autoconnect contributors <maintainers@example.com>  Tue, 01 Sep 2026 00:00:00 +0000
+ -- Bikram Kumar Das <bikramkumardas@proton.me>  Mon, 01 Sep 2026 00:00:00 +0000

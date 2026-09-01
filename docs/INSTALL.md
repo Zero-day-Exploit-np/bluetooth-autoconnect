@@ -5,7 +5,7 @@ supported distribution, plus first-run verification.
 
 ## 1. Prerequisites (all distributions)
 
-- Python 3.9 or newer
+- Python 3.10 or newer
 - BlueZ (`bluetoothd`) installed and its systemd unit (`bluetooth.service`)
   enabled
 - `systemd` (for the provided service units — the CLI itself works

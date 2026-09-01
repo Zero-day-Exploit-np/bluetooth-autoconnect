@@ -45,13 +45,13 @@ test:
 	$(PYTHON) -m pytest -v
 
 lint:
-	$(PYTHON) -m flake8 bluetooth_autoconnect tests
+	$(PYTHON) -m ruff check src/bluetooth_autoconnect tests
 
 format:
-	$(PYTHON) -m black bluetooth_autoconnect tests
+	$(PYTHON) -m black src/bluetooth_autoconnect tests
 
 typecheck:
-	$(PYTHON) -m mypy bluetooth_autoconnect
+	$(PYTHON) -m mypy src/bluetooth_autoconnect
 
 build: clean
 	$(PYTHON) -m pip install --upgrade build

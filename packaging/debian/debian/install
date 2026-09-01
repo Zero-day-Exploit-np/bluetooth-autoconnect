@@ -1,1 +1,3 @@
+systemd/bluetooth-autoconnect.service      usr/lib/systemd/system/
 systemd/bluetooth-autoconnect-user.service usr/lib/systemd/user/
+etc/bluetooth-autoconnect/config.yaml      etc/bluetooth-autoconnect/

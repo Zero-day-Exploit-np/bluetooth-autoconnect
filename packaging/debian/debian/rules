@@ -7,3 +7,7 @@ export PYBUILD_NAME=bluetooth-autoconnect
 
 override_dh_installsystemd:
 	dh_installsystemd --name=bluetooth-autoconnect bluetooth-autoconnect.service
+	dh_installsystemd --user --name=bluetooth-autoconnect bluetooth-autoconnect-user.service
+
+override_dh_auto_test:
+	: # skip tests at package build time (run via CI instead)

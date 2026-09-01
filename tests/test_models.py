@@ -58,6 +58,6 @@ class TestAdapter:
         assert adapter.powered is True
         try:
             adapter.powered = False  # type: ignore[misc]
-            assert False, "Adapter should be immutable"
+            assert False, "Adapter should be immutable"  # noqa: B011
         except AttributeError:
             pass

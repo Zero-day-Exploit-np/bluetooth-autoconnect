@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { file = "LICENSE" }
 authors = [
-    { name = "bluetooth-autoconnect contributors" },
+    { name = "Bikram Kumar Das", email = "bikramkumardas@proton.me" },
 ]
 keywords = ["bluetooth", "bluez", "dbus", "linux", "autoconnect", "systemd"]
 classifiers = [
@@ -52,11 +52,11 @@ docs = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/bluetooth-autoconnect"
-Documentation = "https://example.github.io/bluetooth-autoconnect/"
-Repository = "https://github.com/example/bluetooth-autoconnect"
-Issues = "https://github.com/example/bluetooth-autoconnect/issues"
-Changelog = "https://github.com/example/bluetooth-autoconnect/releases"
+Homepage = "https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect"
+Documentation = "https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect#readme"
+Repository = "https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect"
+Issues = "https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/issues"
+Changelog = "https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/releases"
 
 [project.scripts]
 bluetooth-autoconnect = "bluetooth_autoconnect.cli:main"
@@ -97,7 +97,12 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ANN"]
-ignore = ["ANN101", "ANN102", "D203", "D212"]
+ignore = ["D203", "D212", "ANN401"]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use many small inline classes and helper functions; annotation
+# enforcement there adds noise without meaningful safety benefit.
+"tests/**" = ["ANN", "E501"]
 
 [tool.mypy]
 python_version = "3.10"
@@ -116,3 +121,4 @@ upload_to_pypi = true
 upload_to_release = true
 build_command = "python -m build"
 commit_message = "chore(release): {version}"
+version_variables = ["src/bluetooth_autoconnect/__init__.py:__version__"]
