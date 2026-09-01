@@ -1,19 +1,89 @@
-# bluetooth-autoconnect
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Zero-day-Exploit-np/bluetooth-autoconnect/main/docs/assets/logo.png" alt="bluetooth-autoconnect" width="120" />
+</p>
 
-> Automatically reconnect paired, trusted Bluetooth devices on Linux — headphones, mice, keyboards, speakers — the moment they come into range.
+<h1 align="center">bluetooth-autoconnect</h1>
 
-Talks directly to [BlueZ](http://www.bluez.org/) over D-Bus (no shelling out to `bluetoothctl`), so it's fast, event-driven, and works across any number of adapters. Ships as a systemd service that starts at boot and requires zero ongoing interaction.
+<p align="center">
+  <strong>Automatically reconnect paired Bluetooth devices on Linux — no desktop environment required.</strong><br>
+  Event-driven, systemd-native, zero-configuration.
+</p>
 
-[![Tests](https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/test.yml/badge.svg)](https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/test.yml)
-[![Lint](https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/lint.yml/badge.svg)](https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/lint.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+<p align="center">
+  <a href="https://pypi.org/project/bluetooth-autoconnect/"><img alt="PyPI" src="https://img.shields.io/pypi/v/bluetooth-autoconnect?color=blue&label=PyPI"></a>
+  <a href="https://pypi.org/project/bluetooth-autoconnect/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/bluetooth-autoconnect"></a>
+  <a href="https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/test.yml"><img alt="Tests" src="https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/test.yml/badge.svg"></a>
+  <a href="https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/lint.yml"><img alt="Lint" src="https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/actions/workflows/lint.yml/badge.svg"></a>
+  <a href="https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Zero-day-Exploit-np/bluetooth-autoconnect?label=release"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/github/license/Zero-day-Exploit-np/bluetooth-autoconnect"></a>
+</p>
+
+<p align="center">
+  <a href="#-installation">Install</a> •
+  <a href="#-usage">Usage</a> •
+  <a href="#-configuration">Config</a> •
+  <a href="#-automatic-reconnect-behavior">How it works</a> •
+  <a href="#-troubleshooting">Troubleshooting</a> •
+  <a href="#-contributing">Contributing</a>
+</p>
 
 ---
 
-## Quick Start
+## Why bluetooth-autoconnect?
 
-**One command installs everything and starts the service:**
+Most Linux Bluetooth tools reconnect devices only when a desktop session is available. **bluetooth-autoconnect** is different:
+
+- Runs as a **system service** — reconnects at boot, before any user logs in
+- Talks to [BlueZ](https://www.bluez.org/) directly over **D-Bus** — no shelling out to `bluetoothctl`, no polling
+- Handles the **"silent return" gap** — devices that come back into range without firing a D-Bus event are caught by a periodic background scanner
+- Backs off **per device** — a flaky headset won't block your keyboard from reconnecting
+- Works headlessly on servers, Raspberry Pi, embedded Linux, kiosk machines, and normal desktops alike
+
+---
+
+## ✨ Feature Highlights
+
+| Feature | Details |
+|---|---|
+| **Instant event-driven reconnect** | Subscribes to BlueZ D-Bus signals; reacts within milliseconds of adapter power-on, device appearance, or disconnect |
+| **Periodic background scan** | Wakes every 30 s (configurable) to catch devices that return silently — fixes the most common reconnect gap |
+| **Per-device exponential backoff** | 1 min → 2 → 4 → 8 → 16 min cap; each MAC is tracked independently |
+| **Multi-adapter support** | Scans all powered adapters simultaneously |
+| **Safe by default** | Only ever connects `Paired: yes` + `Trusted: yes` devices; no automatic pairing |
+| **systemd integration** | System-wide *and* per-user service units; structured journal logging |
+| **Health check** | `bluetooth-autoconnect doctor` — instant PASS/FAIL diagnostics |
+| **Zero runtime dependencies** | Pure Python D-Bus client; no native extensions required |
+
+---
+
+## 📦 Installation
+
+Choose the method that fits your workflow.
+
+### Option 1 — PyPI (quickest)
+
+```bash
+pip install bluetooth-autoconnect
+```
+
+> Requires Python 3.10+. For journal integration install the optional extra:
+> ```bash
+> pip install "bluetooth-autoconnect[journal]"
+> ```
+
+Then install the systemd service manually:
+
+```bash
+# System-wide (runs at boot, recommended)
+sudo install -Dm644 /path/to/systemd/bluetooth-autoconnect.service \
+    /usr/lib/systemd/system/bluetooth-autoconnect.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now bluetooth-autoconnect
+```
+
+### Option 2 — Automatic installer (recommended for full setup)
+
+Clones the repo, installs deps, creates an isolated virtualenv, wires up systemd, and starts the service — all in one step:
 
 ```bash
 git clone https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect.git
@@ -21,78 +91,38 @@ cd bluetooth-autoconnect
 sudo bash scripts/install.sh
 ```
 
-That's it. The service is running. Your paired, trusted devices will reconnect automatically from now on.
+Done. The service is running.
 
----
+### Option 3 — Native distro packages
 
-## Supported Distributions
+For proper package-manager-managed installs with dependency tracking:
 
-| Distribution | Tested | Package manager |
-|---|---|---|
-| Ubuntu 22.04 / 24.04 | ✅ | apt |
-| Debian 12 (Bookworm) | ✅ | apt |
-| Kali Linux (rolling) | ✅ | apt |
-| Linux Mint 21+ | ✅ | apt |
-| Fedora 39 / 40 | ✅ | dnf |
-| Arch Linux | ✅ | pacman |
-| Manjaro | ✅ | pacman |
-| openSUSE Tumbleweed | ✅ | zypper |
-
-Requires: Python 3.10+, BlueZ, systemd, D-Bus.
-
----
-
-## What It Does
-
-- **Event-driven** — reacts instantly to adapter power-on, device appearance, and disconnect events via the BlueZ D-Bus API. No polling.
-- **Multi-adapter** — scans and connects devices across every powered Bluetooth adapter simultaneously.
-- **Safe by default** — only ever connects devices that are both *paired* and *trusted*. Nearby unknown devices are ignored.
-- **Resilient** — failed connections retry with exponential backoff (1 s → 2 s → 4 s → … capped at 60 s). Multiple devices connect concurrently.
-- **systemd-native** — ships a system-wide service (boot) and a per-user service (login). Logs to the journal automatically.
-
----
-
-## Installation
-
-### Automatic installer (recommended)
-
-```bash
-git clone https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect.git
-cd bluetooth-autoconnect
-sudo bash scripts/install.sh
-```
-
-The installer:
-1. Detects your distribution automatically
-2. Installs system dependencies (`bluez`, `dbus`, `python3`)
-3. Creates an isolated virtualenv at `/opt/bluetooth-autoconnect`
-4. Installs the package into that virtualenv
-5. Symlinks the binary to `/usr/bin/bluetooth-autoconnect`
-6. Installs the default config to `/etc/bluetooth-autoconnect/config.yaml`
-7. Installs and enables the systemd service
-8. Starts the service immediately
-
-### Manual install (pip)
-
-```bash
-pip install --user .
-```
-
-Then follow the [systemd integration](#service-management) section below to enable the service.
-
-### Native distro packages
-
-For proper dependency tracking and package-manager-managed installs, see the guides under `packaging/`:
-
-| Distro family | Guide |
+| Distro family | Build guide |
 |---|---|
 | Debian / Ubuntu / Kali / Mint | [`packaging/debian/README.md`](packaging/debian/README.md) |
-| Arch / Manjaro | [`packaging/arch/README.md`](packaging/arch/README.md) |
+| Arch Linux / Manjaro | [`packaging/arch/README.md`](packaging/arch/README.md) |
 | Fedora / openSUSE | [`packaging/fedora/README.md`](packaging/fedora/README.md) |
 
 ---
 
-## Usage
+## 🖥️ Supported Distributions
+
+| Distribution | Status | Package manager |
+|---|---|---|
+| Ubuntu 22.04 / 24.04 | ✅ Tested | apt |
+| Debian 12 (Bookworm) | ✅ Tested | apt |
+| Kali Linux (rolling) | ✅ Tested | apt |
+| Linux Mint 21+ | ✅ Tested | apt |
+| Fedora 39 / 40 | ✅ Tested | dnf |
+| Arch Linux | ✅ Tested | pacman |
+| Manjaro | ✅ Tested | pacman |
+| openSUSE Tumbleweed | ✅ Tested | zypper |
+
+**Requirements:** Python 3.10+, BlueZ ≥ 5.x, systemd, D-Bus.
+
+---
+
+## 🚀 Usage
 
 ```
 bluetooth-autoconnect [--daemon] [--debug] [--rescan-interval SECONDS]
@@ -100,83 +130,190 @@ bluetooth-autoconnect [--daemon] [--debug] [--rescan-interval SECONDS]
                       [doctor]
 ```
 
+### Commands
+
 | Command | Behaviour |
 |---|---|
-| `bluetooth-autoconnect` | Scan all powered adapters, connect every paired+trusted device once, then exit. |
-| `bluetooth-autoconnect --daemon` | Run continuously. Reconnects via D-Bus events **and** periodic background scans. |
-| `bluetooth-autoconnect --debug` | Enable DEBUG-level structured logging (combine with either mode). |
-| `bluetooth-autoconnect --version` | Print installed version and exit. |
-| `bluetooth-autoconnect doctor` | Run health checks and show PASS/FAIL output. |
+| `bluetooth-autoconnect` | One-shot scan — connect all paired+trusted devices once, then exit |
+| `bluetooth-autoconnect --daemon` | Run continuously; reconnects via D-Bus events **and** periodic scans |
+| `bluetooth-autoconnect doctor` | Run health checks; print PASS/FAIL for each system component |
+| `bluetooth-autoconnect --version` | Print installed version and exit |
 
-### Options
+### Flags
 
 | Flag | Default | Description |
 |---|---|---|
-| `--max-attempts N` | 5 | Connection attempts per device before giving up. |
-| `--max-concurrency N` | 5 | Max simultaneous connection attempts. |
-| `--rescan-interval SECONDS` | 30 | Seconds between periodic background scans. Set to `0` to disable. |
+| `--debug` | off | Structured DEBUG-level logging with per-device fields |
+| `--max-attempts N` | `5` | Connect attempts per device before giving up |
+| `--max-concurrency N` | `5` | Maximum simultaneous connect attempts |
+| `--rescan-interval SECONDS` | `30` | Periodic background scan interval. `0` = disable |
 
 ### Exit codes
 
 | Code | Meaning |
 |---|---|
-| 0 | All eligible devices connected (or none needed to). |
-| 1 | At least one eligible device failed to connect. |
-| 2 | Fatal D-Bus / BlueZ startup error. |
-| 130 | Interrupted by Ctrl-C. |
+| `0` | All eligible devices connected (or none were needed) |
+| `1` | At least one eligible device failed to connect |
+| `2` | Fatal D-Bus / BlueZ startup error |
+| `130` | Interrupted by Ctrl-C |
 
 ### Examples
 
 ```bash
-# One-shot: connect everything paired+trusted right now
+# Connect everything right now (one-shot)
 bluetooth-autoconnect
 
-# Run as a daemon (what the systemd service does)
+# Run as a daemon — the same mode the systemd service uses
 bluetooth-autoconnect --daemon
 
-# Debug a device that won't reconnect — verbose structured logs
+# Debug a device that isn't reconnecting
 bluetooth-autoconnect --daemon --debug
 
-# Scan more aggressively: every 10 seconds
+# Scan more aggressively (every 10 s instead of every 30 s)
 bluetooth-autoconnect --daemon --rescan-interval 10
 
-# Disable periodic scanning, rely on D-Bus events only
+# Disable periodic scanning; rely only on D-Bus events
 bluetooth-autoconnect --daemon --rescan-interval 0
 
-# Be more patient with a flaky headset
+# Allow more retries for a flaky headset
 bluetooth-autoconnect --max-attempts 10
 
-# Run health checks
+# Check system health before troubleshooting
 bluetooth-autoconnect doctor
 ```
 
 ---
 
-## Service Management
+## ⚙️ Configuration
 
-Two systemd units are provided:
+The config file lives at `/etc/bluetooth-autoconnect/config.yaml`.  
+It is **never overwritten** by updates.
+
+```yaml
+retry:
+  max_attempts: 5       # connect attempts per device before giving up
+  base_delay: 1.0       # seconds before first retry
+  max_delay: 60.0       # cap on per-attempt delay
+  multiplier: 2.0       # exponential backoff factor
+
+daemon:
+  rescan_interval_seconds: 30   # periodic scan interval (0 = disabled)
+  max_concurrency: 5            # simultaneous connect attempts
+
+logging:
+  level: INFO           # change to DEBUG for verbose output
+
+# Per-device priority (higher value = connect first)
+# device_priorities:
+#   AA:BB:CC:DD:EE:FF: 250
+
+# Prevent specific devices from ever auto-connecting
+# blacklist:
+#   - AA:BB:CC:DD:EE:FF
+```
+
+---
+
+## 🔄 Automatic Reconnect Behavior
+
+bluetooth-autoconnect uses two complementary mechanisms.
+
+### 1 — Event-driven reconnect (instant)
+
+The daemon subscribes to BlueZ D-Bus signals and fires an immediate connect attempt when any of these events arrive:
+
+| D-Bus signal | Trigger condition |
+|---|---|
+| `Adapter.Powered = true` | Bluetooth adapter switched on |
+| `InterfacesAdded` (Device) | Known device object appeared on the bus |
+| `Device.Connected = false` | A connected device dropped off |
+| `Device.RSSI` updated | Device advertisement received — it's back in range |
+| `Device.Trusted = true` | Device was just marked trusted |
+| `Device.Paired = true` | Device was just paired |
+
+### 2 — Periodic background scan (the silent-return fix)
+
+Some devices return to range **without advertising any D-Bus event** — slowly waking headphones, congested RF environments, BLE devices with long advertisement intervals. The event-driven path never fires for these.
+
+The periodic scanner wakes every `rescan_interval_seconds` (default 30 s), enumerates all disconnected trusted devices, skips any still inside their backoff window, and retries the rest.
+
+```
+t=0s     Device disconnects → immediate attempt (fails: page-timeout)
+t=1s     Backoff: wait 60 s
+t=61s    Periodic scan → device unreachable → fail (backoff: 120 s)
+t=181s   Periodic scan → device unreachable → fail (backoff: 240 s)
+  ···
+t=Xm     Device returns silently — no D-Bus event
+t=Xm+30s Periodic scan → reconnect succeeds → backoff cleared ✓
+```
+
+### Per-device backoff schedule
+
+Each MAC address tracks its own backoff independently:
+
+| Consecutive failures | Cooldown before next attempt |
+|---|---|
+| 1 | 1 minute |
+| 2 | 2 minutes |
+| 3 | 4 minutes |
+| 4 | 8 minutes |
+| 5+ | 16 minutes (hard cap: 30 minutes) |
+
+Backoff **resets immediately** on:
+- Successful reconnect
+- `Device.RSSI` signal (device is in range)
+- `Device.Connected = true` (device connected on its own)
+
+### Trigger an immediate rescan at any time
+
+```bash
+sudo systemctl kill -s SIGHUP bluetooth-autoconnect
+```
+
+---
+
+## 🔧 How Device Selection Works
+
+A device is auto-connected **only when BlueZ reports both**:
+
+- `Paired: yes` — you completed the pairing handshake, **and**
+- `Trusted: yes` — you (or BlueZ) marked the device as trusted
+
+Unpaired devices, paired-but-untrusted devices, and unknown nearby devices are silently skipped and logged at `DEBUG` level. This tool **never pairs or trusts devices on its own**.
+
+To trust an already-paired device:
+
+```bash
+bluetoothctl trust AA:BB:CC:DD:EE:FF
+```
+
+---
+
+## 🛠️ Service Management
+
+Two systemd units ship with the project:
 
 | Unit | Scope | Starts at |
 |---|---|---|
-| `bluetooth-autoconnect.service` | System-wide (root) | Boot |
-| `bluetooth-autoconnect.service` (user) | Per-user | Login |
+| `bluetooth-autoconnect.service` | System-wide (runs as root) | Boot |
+| `bluetooth-autoconnect.service` (user) | Per-user session | Login |
 
 ### System-wide service
 
 ```bash
-# Status
+# View status
 sudo systemctl status bluetooth-autoconnect
 
-# Start / stop / restart
-sudo systemctl start bluetooth-autoconnect
-sudo systemctl stop bluetooth-autoconnect
+# Control
+sudo systemctl start   bluetooth-autoconnect
+sudo systemctl stop    bluetooth-autoconnect
 sudo systemctl restart bluetooth-autoconnect
 
-# Enable at boot / disable
-sudo systemctl enable bluetooth-autoconnect
+# Enable / disable at boot
+sudo systemctl enable  bluetooth-autoconnect
 sudo systemctl disable bluetooth-autoconnect
 
-# Live logs
+# Stream live logs
 journalctl -u bluetooth-autoconnect -f
 
 # Trigger an immediate full rescan without restarting
@@ -189,281 +326,166 @@ sudo systemctl kill -s SIGHUP bluetooth-autoconnect
 # Enable at login
 systemctl --user enable --now bluetooth-autoconnect
 
-# Live logs
+# Stream live logs
 journalctl --user -u bluetooth-autoconnect -f
 ```
 
 ---
 
-## Update
+## 🔍 Diagnostics
+
+`bluetooth-autoconnect doctor` checks every prerequisite and prints a clear report:
+
+```
+bluetooth-autoconnect doctor
+
+  [PASS] bluetooth.service — active
+  [PASS] D-Bus system bus  — socket reachable
+  [PASS] BlueZ available   — org.bluez found
+  [PASS] Adapter hci0      — powered, address=AA:BB:CC:DD:EE:FF
+  [PASS] Trusted device: JBL Speaker — connected
+  [WARN] Trusted device: Sony WH-1000XM5 — not connected (mac=11:22:33:44:55:66)
+```
+
+Exit code `0` = all checks passed. Exit code `1` = at least one hard failure.
+
+---
+
+## 🔄 Update
 
 ```bash
 cd bluetooth-autoconnect
 sudo bash scripts/update.sh
 ```
 
-The updater pulls the latest source, upgrades the package in the virtualenv, refreshes the systemd units, and restarts the service.
+Pulls the latest source, upgrades the package, refreshes systemd units, and restarts the service.
 
 ---
 
-## Uninstall
+## 🗑️ Uninstall
 
 ```bash
 cd bluetooth-autoconnect
 sudo bash scripts/uninstall.sh
 ```
 
-Removes the service, binary symlink, virtualenv, and (optionally) the configuration directory. Your Bluetooth pairing data in BlueZ is never touched.
+Removes the service, binary symlink, and virtualenv. Optionally removes the configuration directory. Your Bluetooth pairing data in BlueZ is never touched.
 
 ---
 
-## Configuration
+## ❓ Troubleshooting
 
-The default config lives at `/etc/bluetooth-autoconnect/config.yaml`. It is not overwritten on update.
+### `org.bluez is not available on the system bus`
 
-```yaml
-retry:
-  max_attempts: 5      # attempts per device before giving up
-  base_delay: 1.0      # seconds before first retry
-  max_delay: 60.0      # cap on per-attempt backoff delay
-  multiplier: 2.0      # exponential backoff factor
-
-daemon:
-  # Seconds between periodic background rescans (0 = disabled).
-  # This is the primary fix for devices that return to range without
-  # generating a BlueZ D-Bus event (see Automatic Reconnect Behavior).
-  rescan_interval_seconds: 30
-  max_concurrency: 5   # simultaneous connection attempts
-
-logging:
-  level: INFO          # DEBUG for verbose output
-
-# Per-device priorities (higher = connect first)
-# device_priorities:
-#   AA:BB:CC:DD:EE:FF: 250
-
-# Exclude specific devices from auto-connect
-# blacklist:
-#   - AA:BB:CC:DD:EE:FF
-```
-
----
-
-## How Device Selection Works
-
-A device is auto-connected **only if BlueZ reports both**:
-
-- `Paired: true` — you completed a pairing handshake, **and**
-- `Trusted: true` — you (or BlueZ) marked it trusted
-
-Anything else is skipped and logged at debug level. This tool never pairs or trusts devices on its own.
-
-To trust an already-paired device:
-
-```bash
-bluetoothctl trust AA:BB:CC:DD:EE:FF
-```
-
----
-
-## Automatic Reconnect Behavior
-
-bluetooth-autoconnect uses **two complementary mechanisms** to ensure devices reconnect as reliably as possible.
-
-### 1. Event-driven reconnect (instant)
-
-The daemon subscribes to BlueZ D-Bus signals. When one of the following events arrives, an immediate reconnect scan is triggered:
-
-| Event | What happened |
-|---|---|
-| `Adapter.Powered = true` | Bluetooth adapter was switched on |
-| `InterfacesAdded` (Device) | A known device object appeared on the bus |
-| `Device.Connected = false` | A connected device dropped off |
-| `Device.RSSI` updated | Device advertisement seen — device is back in range |
-| `Device.Trusted = true` | A device was just trusted |
-| `Device.Paired = true` | A device was just paired |
-
-This covers the most common cases: locking/unlocking a laptop, turning Bluetooth off and on, or a device reconnecting from its own side.
-
-### 2. Periodic background scan (the reconnect gap fix)
-
-Some devices go out of range and come back **without generating any D-Bus event** — for example, headphones that wake slowly, or devices on noisy RF channels. In these cases the event-driven path never fires, so the daemon would never retry.
-
-The periodic scanner wakes up every `rescan_interval_seconds` (default: 30 s), enumerates all disconnected trusted devices, and attempts to reconnect any that are not in their backoff window.
-
-```
-Timeline example:
-
-t=0s    Device disconnects  → immediate reconnect attempt (fails: page-timeout)
-t=1s    Backoff: wait 60 s
-t=61s   Periodic scan fires → device still unreachable → fail (backoff: 120 s)
-t=181s  Periodic scan fires → device still unreachable → fail (backoff: 240 s)
-...
-t=Xm    Device returns to range (no D-Bus event!)
-t=Xm+30s Periodic scan fires → reconnect succeeds → backoff cleared
-```
-
-Control this with `--rescan-interval`:
-
-```bash
-bluetooth-autoconnect --daemon --rescan-interval 30   # default
-bluetooth-autoconnect --daemon --rescan-interval 10   # more aggressive
-bluetooth-autoconnect --daemon --rescan-interval 0    # disable (events only)
-```
-
-Or in `/etc/bluetooth-autoconnect/config.yaml`:
-
-```yaml
-daemon:
-  rescan_interval_seconds: 30   # 0 = disabled
-```
-
-### Per-device smart backoff
-
-To avoid hammering an unreachable device, each MAC address has its own backoff state independent of all others. After each failed reconnect attempt the cooldown doubles:
-
-| Failure # | Wait before next attempt |
-|---|---|
-| 1 | 1 minute |
-| 2 | 2 minutes |
-| 3 | 4 minutes |
-| 4 | 8 minutes |
-| 5+ | 16 minutes (maximum: 30 minutes) |
-
-The backoff is **reset immediately** when:
-- A reconnect attempt succeeds.
-- BlueZ reports `Device.RSSI` (device advertisement seen — device is in range).
-- BlueZ reports `Device.Connected = true` (device connected on its own).
-
-This means that if your headset turns itself on, the daemon will reconnect to it in at most one `rescan_interval` cycle — typically within 30 seconds.
-
-### Forcing an immediate rescan
-
-At any time:
-
-```bash
-sudo systemctl kill -s SIGHUP bluetooth-autoconnect
-```
-
----
-
-## Troubleshooting
-
-### Service won't start — "org.bluez is not available"
-
-BlueZ isn't running:
+BlueZ is not running. Start it:
 
 ```bash
 sudo systemctl enable --now bluetooth
 sudo systemctl status bluetooth
 ```
 
-### Devices found but never connect
+### Devices are found but never connect
 
-1. Confirm the device is paired **and** trusted:
+1. Confirm the device is **paired and trusted**:
    ```bash
    bluetoothctl info AA:BB:CC:DD:EE:FF
-   # Look for:  Paired: yes   Trusted: yes
+   # Must show:  Paired: yes   Trusted: yes
    ```
-2. If `Trusted: no`, run `bluetoothctl trust AA:BB:CC:DD:EE:FF`
-3. Run with `--verbose` to see per-attempt logs
+2. If `Trusted: no`: `bluetoothctl trust AA:BB:CC:DD:EE:FF`
+3. Run with `--debug` to see per-attempt structured logs
 
-### Permission denied on Connect()
+### Permission denied on `Connect()`
 
-The system-wide service runs as root and has full BlueZ access. The per-user service needs your user in the `bluetooth` group on some distributions:
+The system-wide service has full BlueZ access. The per-user service may need your user in the `bluetooth` group:
 
 ```bash
 sudo usermod -aG bluetooth "$USER"
 # Log out and back in
 ```
 
-### Daemon doesn't react to device coming into range
+### Daemon doesn't react when a device comes back into range
 
-Some devices only advertise for a short window after powering on. If BlueZ never sees the advertisement, there's nothing to react to — this is a firmware/BlueZ level issue. Trigger a manual rescan:
+Enable the periodic scanner (it's on by default). If you've disabled it, re-enable it:
 
 ```bash
-sudo systemctl kill -s SIGHUP bluetooth-autoconnect
+bluetooth-autoconnect --daemon --rescan-interval 30
 ```
 
-### Logs not appearing in journalctl
-
-Install the optional journal integration:
-```bash
-pip install "bluetooth-autoconnect[journal]"
+Or in the config file:
+```yaml
+daemon:
+  rescan_interval_seconds: 30
 ```
-Without it, stdout is captured by systemd automatically — logs still appear in `journalctl`, just without structured fields.
 
-### Full troubleshooting guide
-
-See [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md) for all known issues.
+For the full guide, see [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ---
 
-## Development
+## 👩‍💻 Development
 
 ```bash
-# Clone and set up a dev environment
 git clone https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect.git
 cd bluetooth-autoconnect
 make venv
 source .venv/bin/activate
-
-# Run tests
-make test          # pytest with coverage (must be ≥ 90%)
-
-# Lint and format
-make lint          # ruff check
-make format        # black
-make typecheck     # mypy
-
-# Build a wheel
-make build         # output in dist/
 ```
+
+| Task | Command |
+|---|---|
+| Run test suite (coverage ≥ 90%) | `make test` |
+| Lint | `make lint` |
+| Auto-format | `make format` |
+| Type-check | `make typecheck` |
+| Build wheel | `make build` |
 
 ### Project layout
 
 ```
 src/bluetooth_autoconnect/
-├── __init__.py         version metadata
-├── __main__.py         python -m bluetooth_autoconnect
-├── cli.py              argument parsing, entry point
+├── cli.py              argument parsing and entry point
 ├── connector.py        retry / backoff / concurrency
-├── daemon.py           event loop, signal handling
+├── daemon.py           event loop, periodic scan, signal handling
 ├── dbus_client.py      BlueZ D-Bus wrapper (dbus-next)
+├── doctor.py           health-check diagnostics
 ├── exceptions.py       exception hierarchy
 ├── logging_setup.py    stdout + journal logging
 └── models.py           Adapter / Device dataclasses
 
-tests/                  pytest suite (no real D-Bus needed)
-systemd/                system + user unit files
-scripts/                install.sh  uninstall.sh  update.sh
-packaging/              debian/  arch/  fedora/
-docs/                   INSTALL.md  TROUBLESHOOTING.md  FAQ.md
+tests/                  pytest suite — no real D-Bus required
+systemd/                system + user service units
+scripts/                install.sh   uninstall.sh   update.sh
+packaging/              debian/   arch/   fedora/
+docs/                   INSTALL.md   TROUBLESHOOTING.md   FAQ.md
 ```
-
-### Running a specific test
-
-```bash
-pytest tests/test_connector.py -v
-```
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/my-feature`)
-3. Make your changes with tests
-4. Ensure `make test lint typecheck` all pass
-5. Open a pull request
 
 ---
 
-## License
+## 🤝 Contributing
+
+Contributions are welcome. Please:
+
+1. Fork the repository
+2. Create a feature branch — `git checkout -b feat/my-feature`
+3. Add tests for new behaviour
+4. Verify `make test lint typecheck` all pass
+5. Open a pull request with a clear description
+
+For bug reports, use the [issue tracker](https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect/issues) and include the output of `bluetooth-autoconnect doctor` and `journalctl -u bluetooth-autoconnect --since "1 hour ago"`.
+
+---
+
+## 📄 License
 
 MIT — see [`LICENSE`](LICENSE).
 
 ---
 
-## Author
+## 👤 Author
 
-**Bikram Kumar Das**
-[github.com/Zero-day-Exploit-np](https://github.com/Zero-day-Exploit-np)
+**Bikram Kumar Das** · [github.com/Zero-day-Exploit-np](https://github.com/Zero-day-Exploit-np)
+
+---
+
+<p align="center">
+  If bluetooth-autoconnect saves you frustration, consider giving it a ⭐ on GitHub.
+</p>
