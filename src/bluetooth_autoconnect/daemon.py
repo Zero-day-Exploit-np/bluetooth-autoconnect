@@ -25,6 +25,7 @@ import logging
 import signal
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from .connector import RetryPolicy, connect_all
 from .dbus_client import ADAPTER_IFACE, DEVICE_IFACE, BlueZClient
@@ -300,7 +301,7 @@ class AutoConnectDaemon:
         event_type: str,
         path: str,
         interface: str,
-        changed: dict,  # type: ignore[type-arg]
+        changed: dict[str, Any],
     ) -> None:
         if interface == ADAPTER_IFACE:
             if (

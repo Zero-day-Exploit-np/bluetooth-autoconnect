@@ -115,6 +115,11 @@ class AutoConnectConfig:
             self.daemon = DaemonConfig(**self.daemon)
 
     def to_dict(self) -> dict[str, Any]:
+        # After __post_init__ the union fields are always the dataclass type,
+        # never plain dicts.  Assert to help mypy narrow the union.
+        assert isinstance(self.retry, RetryConfig)
+        assert isinstance(self.logging, LoggingConfig)
+        assert isinstance(self.daemon, DaemonConfig)
         return {
             "adapter": self.adapter,
             "retry": self.retry.to_dict(),
