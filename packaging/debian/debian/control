@@ -1,0 +1,19 @@
+Source: bluetooth-autoconnect
+Section: admin
+Priority: optional
+Maintainer: bluetooth-autoconnect contributors <maintainers@example.com>
+Build-Depends: debhelper-compat (= 13), dh-python, python3-all, python3-setuptools, python3-pip
+Standards-Version: 4.6.2
+Homepage: https://github.com/example/bluetooth-autoconnect
+Rules-Requires-Root: no
+
+Package: bluetooth-autoconnect
+Architecture: all
+Depends: ${python3:Depends}, ${misc:Depends}, python3-dbus-next | python3-pip, bluez, dbus, systemd
+Recommends: python3-systemd
+Description: Automatically reconnect paired, trusted Bluetooth devices
+ bluetooth-autoconnect is a background service that uses the BlueZ D-Bus
+ API to detect paired and trusted Bluetooth devices (headphones, mice,
+ keyboards, speakers, etc.) and reconnect them automatically whenever
+ Bluetooth is enabled, an adapter becomes available, or a device comes
+ into range. Ships both a system-wide and a per-user systemd service.

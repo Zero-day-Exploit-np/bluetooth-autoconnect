@@ -1,0 +1,9 @@
+#!/usr/bin/make -f
+
+export PYBUILD_NAME=bluetooth-autoconnect
+
+%:
+	dh $@ --with python3,systemd --buildsystem=pybuild
+
+override_dh_installsystemd:
+	dh_installsystemd --name=bluetooth-autoconnect bluetooth-autoconnect.service

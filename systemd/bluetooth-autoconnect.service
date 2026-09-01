@@ -1,0 +1,34 @@
+[Unit]
+Description=Bluetooth Auto-Connect (system-wide daemon)
+Documentation=https://github.com/example/bluetooth-autoconnect
+After=bluetooth.target bluetooth.service dbus.service
+Wants=bluetooth.target
+Requires=dbus.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/bluetooth-autoconnect --daemon
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+# SIGHUP is used by this application to trigger a rescan, not to reload
+# its configuration file, so tell systemd not to intercept it.
+KillSignal=SIGTERM
+SendSIGHUP=no
+
+# Hardening. Bluetooth access via BlueZ D-Bus does not require elevated
+# filesystem or network capabilities, only access to the system D-Bus,
+# which is unaffected by these sandboxing options.
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,18 @@
+[Unit]
+Description=Bluetooth Auto-Connect (per-user daemon)
+Documentation=https://github.com/example/bluetooth-autoconnect
+After=bluetooth.target graphical-session-pre.target
+Wants=bluetooth.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/bluetooth-autoconnect --daemon
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=60
+StartLimitBurst=5
+KillSignal=SIGTERM
+SendSIGHUP=no
+
+[Install]
+WantedBy=default.target

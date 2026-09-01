@@ -1,0 +1,42 @@
+# Maintainer: bluetooth-autoconnect contributors <maintainers@example.com>
+pkgname=bluetooth-autoconnect
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Automatically reconnect paired, trusted Bluetooth devices via BlueZ D-Bus"
+arch=('any')
+url="https://github.com/example/bluetooth-autoconnect"
+license=('MIT')
+depends=('python' 'python-dbus-next' 'bluez' 'bluez-utils' 'systemd')
+makedepends=('python-build' 'python-installer' 'python-wheel' 'python-setuptools')
+optdepends=('python-systemd: native systemd journal logging with structured fields')
+backup=()
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')  # replace with the real checksum when publishing
+
+# This PKGBUILD assumes it is placed inside an already-extracted source
+# tree (i.e. run `makepkg` from the project root with this PKGBUILD
+# copied there), which is the common workflow for local/AUR-style builds.
+# Adjust `source=()` / `sha256sums=()` to point at a release tarball URL
+# for a real AUR submission.
+
+build() {
+  cd "$srcdir/../.."
+  python -m build --wheel --no-isolation
+}
+
+package() {
+  cd "$srcdir/../.."
+  python -m installer --destdir="$pkgdir" dist/*.whl
+
+  install -Dm644 systemd/bluetooth-autoconnect.service \
+    "$pkgdir/usr/lib/systemd/system/bluetooth-autoconnect.service"
+  install -Dm644 systemd/bluetooth-autoconnect-user.service \
+    "$pkgdir/usr/lib/systemd/user/bluetooth-autoconnect.service"
+
+  install -Dm644 README.md \
+    "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 docs/TROUBLESHOOTING.md \
+    "$pkgdir/usr/share/doc/$pkgname/TROUBLESHOOTING.md"
+  install -Dm644 LICENSE \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE" 2>/dev/null || true
+}

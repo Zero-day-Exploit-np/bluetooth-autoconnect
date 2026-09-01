@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bluetooth-autoconnect"
+version = "1.0.0"
+description = "Automatically detect and reconnect paired, trusted Bluetooth devices via BlueZ D-Bus."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [
+    { name = "bluetooth-autoconnect contributors" },
+]
+keywords = ["bluetooth", "bluez", "dbus", "linux", "autoconnect", "systemd"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: System :: Hardware",
+    "Topic :: Utilities",
+]
+dependencies = [
+    "dbus-next>=0.2.3",
+]
+
+[project.optional-dependencies]
+journal = ["systemd-python>=235"]
+dev = [
+    "pytest>=7.4",
+    "pytest-asyncio>=0.21",
+    "flake8>=6.1",
+    "black>=23.9",
+    "mypy>=1.5",
+]
+
+[project.urls]
+Homepage = "https://github.com/example/bluetooth-autoconnect"
+Issues = "https://github.com/example/bluetooth-autoconnect/issues"
+
+[project.scripts]
+bluetooth-autoconnect = "bluetooth_autoconnect.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["bluetooth_autoconnect*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.black]
+line-length = 88
+target-version = ["py39"]
+
+[tool.mypy]
+python_version = "3.9"
+warn_unused_ignores = true
+warn_redundant_casts = true
+ignore_missing_imports = true
