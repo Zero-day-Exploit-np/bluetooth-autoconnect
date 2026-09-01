@@ -1,0 +1,16 @@
+version: '3.9'
+
+services:
+  bluetooth-autoconnect:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    privileged: true
+    network_mode: host
+    volumes:
+      - /run/dbus:/run/dbus:ro
+      - /var/run/dbus:/var/run/dbus:ro
+      - ./config:/etc/bluetooth-autoconnect
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["bluetooth-autoconnect", "--daemon", "--verbose"]

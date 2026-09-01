@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import inspect
 import logging
 import sys
 
@@ -17,13 +18,9 @@ logger = logging.getLogger("bluetooth_autoconnect.cli")
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the argparse parser for the ``bluetooth-autoconnect`` CLI."""
     parser = argparse.ArgumentParser(
         prog="bluetooth-autoconnect",
-        description=(
-            "Automatically detect all paired and trusted Bluetooth "
-            "devices and (re)connect them."
-        ),
+        description="Automatically detect all paired and trusted Bluetooth devices and reconnect them.",
         epilog=(
             "Examples:\n"
             "  bluetooth-autoconnect                 "
@@ -36,44 +33,21 @@ def build_parser() -> argparse.ArgumentParser:
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument(
-        "--daemon",
-        action="store_true",
-        help=(
-            "Run as a background service: monitor D-Bus events and "
-            "automatically reconnect devices when Bluetooth is enabled, "
-            "an adapter becomes available, or a device comes into range."
-        ),
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Show debug logs in addition to normal informational logs.",
-    )
-    parser.add_argument(
-        "--max-attempts",
-        type=int,
-        default=5,
-        metavar="N",
-        help="Maximum connection attempts per device before giving up (default: 5).",
-    )
-    parser.add_argument(
-        "--max-concurrency",
-        type=int,
-        default=5,
-        metavar="N",
-        help="Maximum number of devices to connect simultaneously (default: 5).",
-    )
-    parser.add_argument(
-        "--version",
-        action="version",
-        version=f"%(prog)s {__version__}",
-    )
+    parser.add_argument("--daemon", action="store_true", help="Run as a background service.")
+    parser.add_argument("--verbose", action="store_true", help="Enable debug logging.")
+    parser.add_argument("--max-attempts", type=int, default=5, metavar="N", help="Maximum connection attempts per device before giving up.")
+    parser.add_argument("--max-concurrency", type=int, default=5, metavar="N", help="Maximum number of devices to connect simultaneously.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser
 
 
 async def _async_main(args: argparse.Namespace) -> int:
     policy = RetryPolicy(max_attempts=args.max_attempts)
+
+    async def _await_if_needed(result):
+        if inspect.isawaitable(result):
+            return await result
+        return result
 
     if args.daemon:
         daemon = AutoConnectDaemon(policy=policy, max_concurrency=args.max_concurrency)
@@ -82,10 +56,10 @@ async def _async_main(args: argparse.Namespace) -> int:
 
     daemon = AutoConnectDaemon(policy=policy, max_concurrency=args.max_concurrency)
     try:
-        await daemon.client.connect()
+        await _await_if_needed(daemon.client.connect())
         results = await daemon.run_once()
     finally:
-        await daemon.client.close()
+        await _await_if_needed(daemon.client.close())
 
     if not results:
         return 0
@@ -93,10 +67,8 @@ async def _async_main(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Entry point used by both the console_scripts shim and ``python -m``."""
     parser = build_parser()
     args = parser.parse_args(argv)
-
     configure_logging(verbose=args.verbose)
 
     try:
@@ -112,5 +84,5 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     sys.exit(main())

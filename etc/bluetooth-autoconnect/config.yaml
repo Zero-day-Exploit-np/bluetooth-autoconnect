@@ -1,0 +1,19 @@
+retry:
+  max_attempts: 5
+  base_delay: 1.0
+  max_delay: 60.0
+  multiplier: 2.0
+logging:
+  level: INFO
+  structured: true
+  rotate: weekly
+daemon:
+  scan_interval: 30
+  adapter: null
+  max_concurrency: 5
+  enable_automatic_reconnect: true
+device_priorities:
+  default: 100
+  AA:BB:CC:DD:EE:FF: 250
+blacklist: []
+whitelist: []

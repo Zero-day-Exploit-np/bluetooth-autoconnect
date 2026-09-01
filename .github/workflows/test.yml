@@ -1,0 +1,76 @@
+name: Tests
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: ${{ matrix.name }} (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ubuntu
+            os: ubuntu-latest
+            container: ''
+            python-version: '3.10'
+          - name: ubuntu
+            os: ubuntu-latest
+            container: ''
+            python-version: '3.11'
+          - name: ubuntu
+            os: ubuntu-latest
+            container: ''
+            python-version: '3.12'
+          - name: ubuntu
+            os: ubuntu-latest
+            container: ''
+            python-version: '3.13'
+          - name: fedora
+            os: ubuntu-latest
+            container: docker://fedora:latest
+            python-version: '3.10'
+          - name: fedora
+            os: ubuntu-latest
+            container: docker://fedora:latest
+            python-version: '3.11'
+          - name: fedora
+            os: ubuntu-latest
+            container: docker://fedora:latest
+            python-version: '3.12'
+          - name: fedora
+            os: ubuntu-latest
+            container: docker://fedora:latest
+            python-version: '3.13'
+          - name: arch
+            os: ubuntu-latest
+            container: docker://archlinux:latest
+            python-version: '3.10'
+          - name: arch
+            os: ubuntu-latest
+            container: docker://archlinux:latest
+            python-version: '3.11'
+          - name: arch
+            os: ubuntu-latest
+            container: docker://archlinux:latest
+            python-version: '3.12'
+          - name: arch
+            os: ubuntu-latest
+            container: docker://archlinux:latest
+            python-version: '3.13'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+      - name: Run tests
+        run: pytest -q

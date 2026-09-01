@@ -1,9 +1,4 @@
-"""Custom exception hierarchy for bluetooth-autoconnect.
-
-Keeping a small, explicit exception hierarchy makes it possible for
-callers (CLI, daemon loop) to distinguish between recoverable D-Bus
-hiccups and fatal configuration/environment problems.
-"""
+"""Custom exception hierarchy for bluetooth-autoconnect."""
 
 from __future__ import annotations
 
@@ -13,19 +8,11 @@ class BluetoothAutoConnectError(Exception):
 
 
 class DBusConnectionError(BluetoothAutoConnectError):
-    """Raised when the D-Bus system bus cannot be reached or introspected.
-
-    This usually means the ``dbus-daemon`` / ``dbus-broker`` system bus is
-    not running, or the process does not have permission to access it.
-    """
+    """Raised when the D-Bus system bus cannot be reached or introspected."""
 
 
 class BlueZNotAvailableError(BluetoothAutoConnectError):
-    """Raised when the ``org.bluez`` service is not present on the bus.
-
-    This typically means the ``bluetooth.service`` systemd unit is not
-    running, or BlueZ is not installed.
-    """
+    """Raised when the ``org.bluez`` service is not present on the bus."""
 
 
 class AdapterNotFoundError(BluetoothAutoConnectError):
