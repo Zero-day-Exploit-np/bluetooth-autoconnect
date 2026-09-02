@@ -26,3 +26,19 @@ class DeviceConnectionError(BluetoothAutoConnectError):
         self.device_address = device_address
         self.reason = reason
         super().__init__(f"Failed to connect {device_address}: {reason}")
+
+
+class HookError(BluetoothAutoConnectError):
+    """Raised when a hook script cannot be launched or configured correctly.
+
+    Note: runtime failures of hook subprocesses (non-zero exit, timeout,
+    etc.) are logged and swallowed by :class:`~bluetooth_autoconnect.hooks.HookRunner`
+    and do **not** raise this exception.  ``HookError`` is reserved for
+    structural problems discovered at config-load time, such as a hook path
+    that is not absolute or not executable.
+    """
+
+    def __init__(self, script: str, reason: str) -> None:
+        self.script = script
+        self.reason = reason
+        super().__init__(f"Hook configuration error for {script!r}: {reason}")

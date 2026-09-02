@@ -30,6 +30,7 @@ from typing import Any
 from .connector import RetryPolicy, connect_all
 from .dbus_client import ADAPTER_IFACE, DEVICE_IFACE, BlueZClient
 from .exceptions import BlueZNotAvailableError, DBusConnectionError
+from .hooks import HookEvent, HookRunner
 from .models import Device
 
 logger = logging.getLogger("bluetooth_autoconnect.daemon")
@@ -127,6 +128,9 @@ class AutoConnectDaemon:
         max_concurrency:  Max simultaneous connect calls.
         rescan_interval:  Seconds between periodic background scans.
                           Set to 0 to disable periodic scanning entirely.
+        hook_runner:      Optional :class:`~bluetooth_autoconnect.hooks.HookRunner`
+                          that fires user scripts on connect/disconnect events.
+                          Pass ``None`` (the default) to disable hooks entirely.
     """
 
     def __init__(
@@ -134,10 +138,12 @@ class AutoConnectDaemon:
         policy: RetryPolicy | None = None,
         max_concurrency: int = 5,
         rescan_interval: float = 30.0,
+        hook_runner: HookRunner | None = None,
     ) -> None:
         self.policy = policy or RetryPolicy()
         self.max_concurrency = max_concurrency
         self.rescan_interval = rescan_interval
+        self.hook_runner = hook_runner
         self.client = BlueZClient()
         self._stop_event = asyncio.Event()
         self._rescan_event = asyncio.Event()
@@ -198,6 +204,22 @@ class AutoConnectDaemon:
                 if ok:
                     logger.debug("connection succeeded: mac=%s", addr)
                     self._cooldown.reset(addr)
+                    # Fire on_connect only for devices that were not already
+                    # connected — already-connected devices are reported as
+                    # success by connect_all but were never actually dialled.
+                    if self.hook_runner is not None:
+                        connected_device = next(
+                            (
+                                d
+                                for d in devices
+                                if d.address == addr and not d.connected
+                            ),
+                            None,
+                        )
+                        if connected_device is not None:
+                            self.hook_runner.fire(
+                                HookEvent.CONNECTED, connected_device
+                            )
                 else:
                     logger.debug("connection failed: mac=%s", addr)
                     self._cooldown.record_failure(addr)
@@ -263,6 +285,15 @@ class AutoConnectDaemon:
                             addr,
                         )
                         self._cooldown.reset(addr)
+                        # Fire on_connect hooks for the reconnected device.
+                        if self.hook_runner is not None:
+                            reconnected = next(
+                                (d for d in candidates if d.address == addr), None
+                            )
+                            if reconnected is not None:
+                                self.hook_runner.fire(
+                                    HookEvent.CONNECTED, reconnected
+                                )
                     else:
                         logger.debug("periodic scan: reconnect failed mac=%s", addr)
                         self._cooldown.record_failure(addr)
@@ -328,6 +359,10 @@ class AutoConnectDaemon:
                         "Device %s disconnected; will attempt reconnect.",
                         path,
                     )
+                    # Fire on_disconnect hook. We look up the full device
+                    # record from BlueZ so the hook gets name and adapter_path.
+                    if self.hook_runner is not None:
+                        await self._fire_disconnect_hook(path)
                     self._rescan_event.set()
                 elif "RSSI" in changed:
                     # Device advertisement seen — it's back in range
@@ -357,6 +392,51 @@ class AutoConnectDaemon:
                         path,
                     )
                     self._cooldown.reset(mac)
+
+    # ── Hook helpers ──────────────────────────────────────────────────────
+
+    async def _fire_disconnect_hook(self, device_path: str) -> None:
+        """Look up a device by D-Bus path and fire the on_disconnect hook.
+
+        If the device cannot be found in BlueZ (it may have been removed from
+        the object manager immediately after disconnect), a minimal synthetic
+        Device record is constructed from the D-Bus path so the hook still
+        receives *BT_DEVICE_MAC* and *BT_ADAPTER_PATH*.
+
+        Args:
+            device_path: D-Bus object path of the disconnected device,
+                         e.g. ``"/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"``.
+        """
+        assert self.hook_runner is not None  # guarded by caller
+        device: Device | None = None
+        try:
+            all_devices = await self.client.get_devices()
+            device = next((d for d in all_devices if d.path == device_path), None)
+        except Exception:  # noqa: BLE001
+            logger.debug(
+                "hook: could not query BlueZ for disconnect device path=%s",
+                device_path,
+            )
+
+        if device is None:
+            # Build a minimal synthetic record from what we can parse out of
+            # the D-Bus path so hook scripts still receive useful variables.
+            mac = device_path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
+            adapter_path = device_path.rsplit("/", 1)[0]
+            device = Device(
+                path=device_path,
+                address=mac,
+                name=mac,  # name unknown at this point
+                adapter_path=adapter_path,
+                paired=False,
+                trusted=False,
+                connected=False,
+            )
+            logger.debug(
+                "hook: using synthetic device record for disconnect mac=%s", mac
+            )
+
+        self.hook_runner.fire(HookEvent.DISCONNECTED, device)
 
     # ── Signal handlers ───────────────────────────────────────────────────
 

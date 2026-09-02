@@ -55,6 +55,33 @@ class DaemonConfig:
 
 
 @dataclass
+class HooksConfig:
+    """Configuration for the hook execution system.
+
+    Hooks are user-supplied executable scripts fired when a device connects
+    or disconnects.  Each list entry must be an absolute path to an
+    executable file; invalid entries are warned about and ignored at runtime.
+
+    Args:
+        on_connect:       Paths of scripts to run when a device connects.
+        on_disconnect:    Paths of scripts to run when a device disconnects.
+        timeout_seconds:  Per-hook wall-clock timeout in seconds.
+                          ``0`` or negative means no timeout (use with care).
+    """
+
+    on_connect: list[str] = field(default_factory=list)
+    on_disconnect: list[str] = field(default_factory=list)
+    timeout_seconds: float = 30.0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "on_connect": list(self.on_connect),
+            "on_disconnect": list(self.on_disconnect),
+            "timeout_seconds": self.timeout_seconds,
+        }
+
+
+@dataclass
 class DeviceRule:
     address: str
     priority: int = 100
@@ -97,11 +124,22 @@ class DeviceRuleSet:
 
 @dataclass
 class AutoConnectConfig:
+    """Top-level configuration object for bluetooth-autoconnect.
+
+    All nested config objects accept either a typed dataclass instance or a
+    plain ``dict``; they are coerced to the dataclass form in
+    ``__post_init__``.  This makes it straightforward to build an
+    ``AutoConnectConfig`` directly from a parsed YAML document.
+    """
+
     retry: RetryConfig | dict[str, Any] = field(default_factory=RetryConfig)
     logging: LoggingConfig | dict[str, Any] = field(default_factory=LoggingConfig)
     daemon: DaemonConfig | dict[str, Any] = field(default_factory=DaemonConfig)
+    hooks: HooksConfig | dict[str, Any] = field(default_factory=HooksConfig)
     adapter: str | None = None
-    device_priorities: dict[str, int] = field(default_factory=lambda: {"default": 100})
+    device_priorities: dict[str, int] = field(
+        default_factory=lambda: {"default": 100}
+    )
     device_rules: DeviceRuleSet = field(default_factory=DeviceRuleSet)
     whitelist: list[str] = field(default_factory=list)
     blacklist: list[str] = field(default_factory=list)
@@ -113,6 +151,8 @@ class AutoConnectConfig:
             self.logging = LoggingConfig(**self.logging)
         if isinstance(self.daemon, dict):
             self.daemon = DaemonConfig(**self.daemon)
+        if isinstance(self.hooks, dict):
+            self.hooks = HooksConfig(**self.hooks)
 
     def to_dict(self) -> dict[str, Any]:
         # After __post_init__ the union fields are always the dataclass type,
@@ -120,11 +160,13 @@ class AutoConnectConfig:
         assert isinstance(self.retry, RetryConfig)
         assert isinstance(self.logging, LoggingConfig)
         assert isinstance(self.daemon, DaemonConfig)
+        assert isinstance(self.hooks, HooksConfig)
         return {
             "adapter": self.adapter,
             "retry": self.retry.to_dict(),
             "logging": self.logging.to_dict(),
             "daemon": self.daemon.to_dict(),
+            "hooks": self.hooks.to_dict(),
             "device_priorities": self.device_priorities,
             "rules": self.device_rules.to_dict()["rules"],
             "whitelist": self.whitelist,

@@ -18,6 +18,38 @@ daemon:
   max_concurrency: 5
   enable_automatic_reconnect: true
 
+# ── Hook scripts ──────────────────────────────────────────────────────────────
+#
+# Execute custom scripts when a Bluetooth device connects or disconnects.
+# Each entry must be an absolute path to an executable file.  Invalid or
+# non-executable paths are logged as warnings and silently skipped.
+#
+# Scripts receive the following environment variables:
+#
+#   BT_EVENT          "connected" or "disconnected"
+#   BT_DEVICE_MAC     MAC address, e.g. "AA:BB:CC:DD:EE:FF"
+#   BT_DEVICE_NAME    Human-readable device name, e.g. "JBL Speaker"
+#   BT_DEVICE_PATH    D-Bus object path, e.g. "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+#   BT_ADAPTER_PATH   D-Bus path of the owning adapter, e.g. "/org/bluez/hci0"
+#
+# hooks:
+#   # Per-script timeout in seconds. 0 = no timeout (not recommended).
+#   timeout_seconds: 30
+#
+#   on_connect:
+#     - /usr/local/bin/bt-connected.sh
+#     - /home/alice/scripts/notify-device.sh
+#
+#   on_disconnect:
+#     - /usr/local/bin/bt-disconnected.sh
+#
+# Example script skeleton (/usr/local/bin/bt-connected.sh):
+#
+#   #!/usr/bin/env bash
+#   set -euo pipefail
+#   echo "Device connected: $BT_DEVICE_NAME ($BT_DEVICE_MAC)"
+#   # Add your logic here — e.g. adjust audio routing, send a notification, etc.
+
 device_priorities:
   default: 100
   # AA:BB:CC:DD:EE:FF: 250   ← example; uncomment and set your device MAC
