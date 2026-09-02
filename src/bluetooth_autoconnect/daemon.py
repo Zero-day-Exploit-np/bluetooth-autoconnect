@@ -217,9 +217,7 @@ class AutoConnectDaemon:
                             None,
                         )
                         if connected_device is not None:
-                            self.hook_runner.fire(
-                                HookEvent.CONNECTED, connected_device
-                            )
+                            self.hook_runner.fire(HookEvent.CONNECTED, connected_device)
                 else:
                     logger.debug("connection failed: mac=%s", addr)
                     self._cooldown.record_failure(addr)
@@ -291,9 +289,7 @@ class AutoConnectDaemon:
                                 (d for d in candidates if d.address == addr), None
                             )
                             if reconnected is not None:
-                                self.hook_runner.fire(
-                                    HookEvent.CONNECTED, reconnected
-                                )
+                                self.hook_runner.fire(HookEvent.CONNECTED, reconnected)
                     else:
                         logger.debug("periodic scan: reconnect failed mac=%s", addr)
                         self._cooldown.record_failure(addr)

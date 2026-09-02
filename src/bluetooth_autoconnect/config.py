@@ -137,9 +137,7 @@ class AutoConnectConfig:
     daemon: DaemonConfig | dict[str, Any] = field(default_factory=DaemonConfig)
     hooks: HooksConfig | dict[str, Any] = field(default_factory=HooksConfig)
     adapter: str | None = None
-    device_priorities: dict[str, int] = field(
-        default_factory=lambda: {"default": 100}
-    )
+    device_priorities: dict[str, int] = field(default_factory=lambda: {"default": 100})
     device_rules: DeviceRuleSet = field(default_factory=DeviceRuleSet)
     whitelist: list[str] = field(default_factory=list)
     blacklist: list[str] = field(default_factory=list)

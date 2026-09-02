@@ -138,9 +138,7 @@ class TestValidateHookPaths:
     def test_empty_list_returns_empty(self) -> None:
         assert validate_hook_paths([]) == []
 
-    def test_custom_label_in_warning(
-        self, caplog: pytest.LogCaptureFixture
-    ) -> None:
+    def test_custom_label_in_warning(self, caplog: pytest.LogCaptureFixture) -> None:
         with caplog.at_level("WARNING", logger="bluetooth_autoconnect.hooks"):
             validate_hook_paths(["relative.sh"], label="on_connect hook")
         assert "on_connect hook" in caplog.text
@@ -306,9 +304,7 @@ class TestBuildHookRunner:
         )
         assert runner is None
 
-    def test_returns_runner_with_valid_connect_script(
-        self, exec_script: str
-    ) -> None:
+    def test_returns_runner_with_valid_connect_script(self, exec_script: str) -> None:
         runner = build_hook_runner(on_connect=[exec_script], on_disconnect=[])
         assert runner is not None
         assert runner.on_connect == [exec_script]
@@ -330,9 +326,7 @@ class TestBuildHookRunner:
         assert runner is not None
         assert runner.timeout_seconds == 60.0
 
-    def test_invalid_paths_filtered_out(
-        self, exec_script: str
-    ) -> None:
+    def test_invalid_paths_filtered_out(self, exec_script: str) -> None:
         runner = build_hook_runner(
             on_connect=[exec_script, "not/absolute", "/no/exist.sh"],
             on_disconnect=[],
@@ -373,9 +367,7 @@ class TestHookRunnerFire:
         runner = HookRunner(on_connect=[], on_disconnect=["/b.sh"])
 
         async def _runner() -> None:
-            with patch.object(
-                runner, "_run_one", new_callable=AsyncMock
-            ) as mock_run:
+            with patch.object(runner, "_run_one", new_callable=AsyncMock) as mock_run:
                 runner.fire(HookEvent.DISCONNECTED, device)
                 await asyncio.sleep(0)
             assert mock_run.call_count == 1
@@ -388,9 +380,7 @@ class TestHookRunnerFire:
         runner = HookRunner(on_connect=[], on_disconnect=[])
 
         async def _runner() -> None:
-            with patch.object(
-                runner, "_run_one", new_callable=AsyncMock
-            ) as mock_run:
+            with patch.object(runner, "_run_one", new_callable=AsyncMock) as mock_run:
                 runner.fire(HookEvent.CONNECTED, device)
                 await asyncio.sleep(0)
             assert mock_run.call_count == 0
@@ -401,9 +391,7 @@ class TestHookRunnerFire:
         runner = HookRunner(on_connect=["/a.sh", "/b.sh", "/c.sh"], on_disconnect=[])
 
         async def _runner() -> None:
-            with patch.object(
-                runner, "_run_one", new_callable=AsyncMock
-            ) as mock_run:
+            with patch.object(runner, "_run_one", new_callable=AsyncMock) as mock_run:
                 runner.fire(HookEvent.CONNECTED, device)
                 await asyncio.sleep(0)
             assert mock_run.call_count == 3
@@ -545,13 +533,9 @@ class TestHookRunnerRunOne:
                     )
 
         asyncio.run(_runner())
-        assert any(
-            "failed to launch" in r.getMessage() for r in caplog.records
-        )
+        assert any("failed to launch" in r.getMessage() for r in caplog.records)
 
-    def test_permission_error_logged_not_raised(
-        self, device: Device
-    ) -> None:
+    def test_permission_error_logged_not_raised(self, device: Device) -> None:
         runner = self._make_runner()
 
         async def _runner() -> None:
@@ -595,9 +579,7 @@ class TestHookRunnerRunOne:
         asyncio.run(_runner())
         assert any("timed out" in r.getMessage() for r in caplog.records)
 
-    def test_no_timeout_when_zero(
-        self, exec_script: str, device: Device
-    ) -> None:
+    def test_no_timeout_when_zero(self, exec_script: str, device: Device) -> None:
         """timeout_seconds=0 means no timeout — script runs to completion."""
         runner = self._make_runner(timeout=0)
 
@@ -754,6 +736,7 @@ class TestDaemonRunOnceHookWiring:
             daemon.client.get_devices = AsyncMock(return_value=[device])
             daemon.client.connect_device = AsyncMock()  # success
             from bluetooth_autoconnect.connector import RetryPolicy
+
             daemon.policy = RetryPolicy(max_attempts=1)
             await daemon.run_once()
 
@@ -776,6 +759,7 @@ class TestDaemonRunOnceHookWiring:
                 side_effect=OSError("page-timeout")
             )
             from bluetooth_autoconnect.connector import RetryPolicy
+
             daemon.policy = RetryPolicy(max_attempts=1)
             await daemon.run_once()
 
@@ -792,6 +776,7 @@ class TestDaemonRunOnceHookWiring:
             daemon.client.get_devices = AsyncMock(return_value=[device])
             daemon.client.connect_device = AsyncMock()
             from bluetooth_autoconnect.connector import RetryPolicy
+
             daemon.policy = RetryPolicy(max_attempts=1)
             await daemon.run_once()
 
@@ -851,9 +836,7 @@ class TestFireDisconnectHook:
 
     def test_falls_back_to_synthetic_device_when_bluez_query_fails(self) -> None:
         daemon, fired = self._make_daemon()
-        daemon.client.get_devices = AsyncMock(
-            side_effect=RuntimeError("dbus error")
-        )
+        daemon.client.get_devices = AsyncMock(side_effect=RuntimeError("dbus error"))
 
         asyncio.run(
             daemon._fire_disconnect_hook("/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF")
@@ -979,9 +962,7 @@ class TestLoadConfig:
         assert result == {}
         assert any("Failed to parse" in r.getMessage() for r in caplog.records)
 
-    def test_non_mapping_yaml_returns_empty_dict(
-        self, tmp_path: Path
-    ) -> None:
+    def test_non_mapping_yaml_returns_empty_dict(self, tmp_path: Path) -> None:
         from bluetooth_autoconnect.cli import _load_config
 
         f = tmp_path / "list.yaml"
