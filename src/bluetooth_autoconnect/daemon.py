@@ -204,20 +204,14 @@ class AutoConnectDaemon:
                 if ok:
                     logger.debug("connection succeeded: mac=%s", addr)
                     self._cooldown.reset(addr)
-                    # Fire on_connect only for devices that were not already
-                    # connected — already-connected devices are reported as
-                    # success by connect_all but were never actually dialled.
-                    if self.hook_runner is not None:
-                        connected_device = next(
-                            (
-                                d
-                                for d in devices
-                                if d.address == addr and not d.connected
-                            ),
-                            None,
-                        )
-                        if connected_device is not None:
-                            self.hook_runner.fire(HookEvent.CONNECTED, connected_device)
+                    # on_connect hooks are NOT fired here.
+                    # connect_device() returning without exception only means
+                    # the kernel accepted the attempt — the device has not
+                    # finished profile negotiation yet.  BlueZ will emit
+                    # PropertiesChanged(Connected=True) when negotiation is
+                    # complete; _handle_device_properties_changed() fires the
+                    # hook there through the state tracker, preventing
+                    # duplicates and false positives.
                 else:
                     logger.debug("connection failed: mac=%s", addr)
                     self._cooldown.record_failure(addr)
@@ -283,13 +277,10 @@ class AutoConnectDaemon:
                             addr,
                         )
                         self._cooldown.reset(addr)
-                        # Fire on_connect hooks for the reconnected device.
-                        if self.hook_runner is not None:
-                            reconnected = next(
-                                (d for d in candidates if d.address == addr), None
-                            )
-                            if reconnected is not None:
-                                self.hook_runner.fire(HookEvent.CONNECTED, reconnected)
+                        # on_connect hooks are NOT fired here — same reason
+                        # as run_once(): the authoritative Connected=True
+                        # D-Bus signal is the only reliable proof that profile
+                        # negotiation completed successfully.
                     else:
                         logger.debug("periodic scan: reconnect failed mac=%s", addr)
                         self._cooldown.record_failure(addr)
