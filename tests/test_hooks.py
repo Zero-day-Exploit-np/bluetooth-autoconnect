@@ -756,8 +756,7 @@ class TestDaemonRunOnceHookWiring:
         asyncio.run(run())
         # run_once must never fire CONNECTED — hooks come from D-Bus signals.
         assert fired == [], (
-            "run_once() must not fire on_connect hooks; "
-            f"unexpected events: {fired}"
+            "run_once() must not fire on_connect hooks; " f"unexpected events: {fired}"
         )
 
     def test_on_connect_hook_not_fired_on_failure(self) -> None:
