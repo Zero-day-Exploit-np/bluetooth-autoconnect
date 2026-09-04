@@ -722,7 +722,20 @@ class TestDaemonRunOnceHookWiring:
         powered=True,
     )
 
-    def test_on_connect_hook_fired_after_successful_connect(self) -> None:
+    def test_on_connect_hook_not_fired_from_run_once(self) -> None:
+        """run_once() must NOT fire on_connect hooks.
+
+        The authoritative source for CONNECTED hooks is the BlueZ D-Bus
+        PropertiesChanged(Connected=True) signal, which is only emitted after
+        full profile negotiation.  connect_device() returning without an
+        exception only means the kernel accepted the attempt — the device may
+        still reject at the profile level and immediately send Connected=False.
+        Firing the hook here would produce false positives.
+
+        This test was previously 'test_on_connect_hook_fired_after_successful_connect'.
+        It is retained as a regression test to ensure the hook is NEVER fired
+        from run_once(), even when connect_device() succeeds.
+        """
         fired: list[tuple[HookEvent, str]] = []
 
         runner = HookRunner(on_connect=["/hook.sh"], on_disconnect=[])
@@ -741,7 +754,11 @@ class TestDaemonRunOnceHookWiring:
             await daemon.run_once()
 
         asyncio.run(run())
-        assert (HookEvent.CONNECTED, "AA:BB:CC:DD:EE:FF") in fired
+        # run_once must never fire CONNECTED — hooks come from D-Bus signals.
+        assert fired == [], (
+            "run_once() must not fire on_connect hooks; "
+            f"unexpected events: {fired}"
+        )
 
     def test_on_connect_hook_not_fired_on_failure(self) -> None:
         fired: list = []
