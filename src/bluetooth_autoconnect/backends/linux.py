@@ -113,9 +113,7 @@ class LinuxBackend:
             self._bluez_root = self._bus.get_proxy_object(
                 BLUEZ_SERVICE, "/", introspection
             )
-            self._object_manager = self._bluez_root.get_interface(
-                OBJECT_MANAGER_IFACE
-            )
+            self._object_manager = self._bluez_root.get_interface(OBJECT_MANAGER_IFACE)
         except Exception as exc:  # noqa: BLE001
             raise BlueZNotAvailableError(
                 "org.bluez is not available on the system bus. "
@@ -163,9 +161,7 @@ class LinuxBackend:
             )
         return adapters
 
-    async def get_devices(
-        self, adapter_path: str | None = None
-    ) -> list[Device]:
+    async def get_devices(self, adapter_path: str | None = None) -> list[Device]:
         """Return all devices known to BlueZ.
 
         Parameters
@@ -211,9 +207,7 @@ class LinuxBackend:
         if self._bus is None:
             raise DBusConnectionError(_NOT_CONNECTED)
         introspection = await self._bus.introspect(BLUEZ_SERVICE, adapter_path)
-        proxy = self._bus.get_proxy_object(
-            BLUEZ_SERVICE, adapter_path, introspection
-        )
+        proxy = self._bus.get_proxy_object(BLUEZ_SERVICE, adapter_path, introspection)
         props_iface = proxy.get_interface(PROPERTIES_IFACE)
         await cast(Any, props_iface).call_set(
             ADAPTER_IFACE, "Powered", Variant("b", powered)
@@ -236,9 +230,7 @@ class LinuxBackend:
         if self._bus is None:
             raise DBusConnectionError(_NOT_CONNECTED)
         introspection = await self._bus.introspect(BLUEZ_SERVICE, device_path)
-        proxy = self._bus.get_proxy_object(
-            BLUEZ_SERVICE, device_path, introspection
-        )
+        proxy = self._bus.get_proxy_object(BLUEZ_SERVICE, device_path, introspection)
         device_iface = proxy.get_interface(DEVICE_IFACE)
         await cast(Any, device_iface).call_connect()
 
@@ -269,9 +261,7 @@ class LinuxBackend:
             raise DBusConnectionError(_NOT_CONNECTED)
 
         # ── InterfacesAdded ───────────────────────────────────────────────
-        def _on_interfaces_added(
-            path: str, interfaces: dict[str, Any]
-        ) -> None:
+        def _on_interfaces_added(path: str, interfaces: dict[str, Any]) -> None:
             unwrapped = _unwrap(interfaces)
             logger.debug(
                 "InterfacesAdded: path=%s interfaces=%s",
@@ -282,19 +272,13 @@ class LinuxBackend:
                 _schedule(callback("added", path, iface_name, props))
 
         # ── InterfacesRemoved ─────────────────────────────────────────────
-        def _on_interfaces_removed(
-            path: str, interfaces: list[str]
-        ) -> None:
-            logger.debug(
-                "InterfacesRemoved: path=%s interfaces=%s", path, interfaces
-            )
+        def _on_interfaces_removed(path: str, interfaces: list[str]) -> None:
+            logger.debug("InterfacesRemoved: path=%s interfaces=%s", path, interfaces)
             for iface_name in interfaces:
                 _schedule(callback("removed", path, iface_name, {}))
 
         cast(Any, self._object_manager).on_interfaces_added(_on_interfaces_added)
-        cast(Any, self._object_manager).on_interfaces_removed(
-            _on_interfaces_removed
-        )
+        cast(Any, self._object_manager).on_interfaces_removed(_on_interfaces_removed)
 
         # ── PropertiesChanged ─────────────────────────────────────────────
         def _message_handler(message: Any) -> None:  # noqa: ANN401

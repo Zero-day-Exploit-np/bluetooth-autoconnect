@@ -92,9 +92,7 @@ class BluetoothBackend(Protocol):
         """
         ...
 
-    async def get_devices(
-        self, adapter_path: str | None = None
-    ) -> list[Device]:
+    async def get_devices(self, adapter_path: str | None = None) -> list[Device]:
         """Return all known (paired/bonded) Bluetooth devices.
 
         Parameters
@@ -252,6 +250,5 @@ def create_backend(
         )
 
     raise BackendUnsupportedError(
-        f"Unknown backend {chosen!r}. "
-        "Valid options: 'linux', 'windows'."
+        f"Unknown backend {chosen!r}. " "Valid options: 'linux', 'windows'."
     )

@@ -122,8 +122,7 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser(
         "doctor",
         help=(
-            "Run diagnostic health checks"
-            " (Bluetooth service, adapters, devices)."
+            "Run diagnostic health checks" " (Bluetooth service, adapters, devices)."
         ),
     )
 

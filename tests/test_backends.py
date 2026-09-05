@@ -222,8 +222,12 @@ class TestBluetoothBackendProtocol:
         class _Fake:
             async def connect(self) -> None: ...
             async def close(self) -> None: ...
-            async def get_adapters(self) -> list: return []
-            async def get_devices(self, adapter_path=None) -> list: return []
+            async def get_adapters(self) -> list:
+                return []
+
+            async def get_devices(self, adapter_path=None) -> list:
+                return []
+
             async def connect_device(self, device_path: str) -> None: ...
             async def subscribe(self, callback: object) -> None: ...
 
@@ -234,8 +238,12 @@ class TestBluetoothBackendProtocol:
 
         class _Incomplete:
             async def close(self) -> None: ...
-            async def get_adapters(self) -> list: return []
-            async def get_devices(self, adapter_path=None) -> list: return []
+            async def get_adapters(self) -> list:
+                return []
+
+            async def get_devices(self, adapter_path=None) -> list:
+                return []
+
             async def connect_device(self, device_path: str) -> None: ...
             async def subscribe(self, callback: object) -> None: ...
 
@@ -443,9 +451,7 @@ class TestLinuxBackendEnumeration:
         assert headset.rssi == -60
 
     def test_get_adapters_empty_when_no_adapter_iface(self) -> None:
-        b = _make_connected_backend(
-            {"/org/bluez/hci0": {"org.bluez.GattManager1": {}}}
-        )
+        b = _make_connected_backend({"/org/bluez/hci0": {"org.bluez.GattManager1": {}}})
         assert asyncio.run(b.get_adapters()) == []
 
     def test_device_is_autoconnect_eligible(self) -> None:
@@ -612,12 +618,23 @@ class TestAutoConnectDaemonBackendInjection:
         from bluetooth_autoconnect.daemon import AutoConnectDaemon
 
         class _FakeBackend:
-            async def connect(self) -> None: pass
-            async def close(self) -> None: pass
-            async def get_adapters(self) -> list: return []
-            async def get_devices(self, adapter_path=None) -> list: return []
-            async def connect_device(self, path: str) -> None: pass
-            async def subscribe(self, cb: object) -> None: pass
+            async def connect(self) -> None:
+                pass
+
+            async def close(self) -> None:
+                pass
+
+            async def get_adapters(self) -> list:
+                return []
+
+            async def get_devices(self, adapter_path=None) -> list:
+                return []
+
+            async def connect_device(self, path: str) -> None:
+                pass
+
+            async def subscribe(self, cb: object) -> None:
+                pass
 
         fake = _FakeBackend()
         daemon = AutoConnectDaemon(backend=fake)
@@ -636,16 +653,28 @@ class TestAutoConnectDaemonBackendInjection:
         from bluetooth_autoconnect.daemon import AutoConnectDaemon
 
         class _MockBackend:
-            async def connect(self) -> None: pass
-            async def close(self) -> None: pass
-            async def get_adapters(self) -> list: return []
-            async def get_devices(self, adapter_path=None) -> list: return []
-            async def connect_device(self, path: str) -> None: pass
-            async def subscribe(self, cb: object) -> None: pass
+            async def connect(self) -> None:
+                pass
+
+            async def close(self) -> None:
+                pass
+
+            async def get_adapters(self) -> list:
+                return []
+
+            async def get_devices(self, adapter_path=None) -> list:
+                return []
+
+            async def connect_device(self, path: str) -> None:
+                pass
+
+            async def subscribe(self, cb: object) -> None:
+                pass
 
         mock = _MockBackend()
         with patch(
-            "bluetooth_autoconnect.daemon.create_backend", side_effect=AssertionError("should not be called")
+            "bluetooth_autoconnect.daemon.create_backend",
+            side_effect=AssertionError("should not be called"),
         ):
             daemon = AutoConnectDaemon(backend=mock)
 

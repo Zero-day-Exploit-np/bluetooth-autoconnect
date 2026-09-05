@@ -415,9 +415,7 @@ class AutoConnectDaemon:
 
                 for addr, ok in results.items():
                     if ok:
-                        logger.info(
-                            "periodic scan: reconnect successful mac=%s", addr
-                        )
+                        logger.info("periodic scan: reconnect successful mac=%s", addr)
                         self._cooldown.reset(addr)
                         # on_connect hooks NOT fired here — same reason as run_once.
                     else:
@@ -494,9 +492,7 @@ class AutoConnectDaemon:
         mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
 
         if changed.get("Connected") is False:
-            logger.debug(
-                "device disconnected: path=%s — scheduling reconnect", path
-            )
+            logger.debug("device disconnected: path=%s — scheduling reconnect", path)
             logger.info("Device %s disconnected; will attempt reconnect.", path)
 
             if self.hook_runner is not None:
@@ -504,9 +500,7 @@ class AutoConnectDaemon:
                 if should_fire:
                     await self._fire_disconnect_hook(path)
                 else:
-                    logger.debug(
-                        "hook: suppressed duplicate DISCONNECTED mac=%s", mac
-                    )
+                    logger.debug("hook: suppressed duplicate DISCONNECTED mac=%s", mac)
             else:
                 self._state_tracker.record_disconnected(mac)
 
@@ -521,9 +515,7 @@ class AutoConnectDaemon:
                 if should_fire:
                     await self._fire_connect_hook(path, mac)
                 else:
-                    logger.debug(
-                        "hook: suppressed duplicate CONNECTED mac=%s", mac
-                    )
+                    logger.debug("hook: suppressed duplicate CONNECTED mac=%s", mac)
             else:
                 self._state_tracker.record_connected(mac)
 
@@ -538,9 +530,7 @@ class AutoConnectDaemon:
             self._rescan_event.set()
 
         elif changed.get("Trusted") is True:
-            logger.debug(
-                "device marked trusted: path=%s — triggering rescan", path
-            )
+            logger.debug("device marked trusted: path=%s — triggering rescan", path)
             self._rescan_event.set()
 
         elif changed.get("Paired") is True:
@@ -578,9 +568,7 @@ class AutoConnectDaemon:
                 trusted=False,
                 connected=True,
             )
-            logger.debug(
-                "hook: using synthetic device record for connect mac=%s", mac
-            )
+            logger.debug("hook: using synthetic device record for connect mac=%s", mac)
 
         self.hook_runner.fire(HookEvent.CONNECTED, device)
 

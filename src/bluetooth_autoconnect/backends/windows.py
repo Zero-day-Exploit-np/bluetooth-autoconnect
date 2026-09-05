@@ -118,9 +118,9 @@ class WindowsBackend:
     def __init__(self) -> None:
         _require_winrt()
         self._callback: EventCallback | None = None
-        self._event_queue: asyncio.Queue[
-            tuple[str, str, str, dict[str, Any]]
-        ] = asyncio.Queue()
+        self._event_queue: asyncio.Queue[tuple[str, str, str, dict[str, Any]]] = (
+            asyncio.Queue()
+        )
         self._pump_task: asyncio.Task[None] | None = None
         # MAC → WinRT BluetoothDevice object (kept alive for event tokens)
         self._watched_devices: dict[str, Any] = {}
@@ -168,9 +168,7 @@ class WindowsBackend:
             )
 
         def _on_removed(sender: Any, info: Any) -> None:
-            self._event_queue.put_nowait(
-                ("removed", str(info.id), _DEVICE_IFACE, {})
-            )
+            self._event_queue.put_nowait(("removed", str(info.id), _DEVICE_IFACE, {}))
 
         self._watcher_added_token = self._watcher.add_added(_on_added)
         self._watcher_updated_token = self._watcher.add_updated(_on_updated)
@@ -245,9 +243,7 @@ class WindowsBackend:
 
     # ── Device enumeration ────────────────────────────────────────────────
 
-    async def get_devices(
-        self, adapter_path: str | None = None
-    ) -> list[Device]:
+    async def get_devices(self, adapter_path: str | None = None) -> list[Device]:
         """Return all paired Bluetooth devices known to Windows.
 
         Uses ``DeviceInformation.find_all_async`` with a selector for
@@ -289,8 +285,7 @@ class WindowsBackend:
                 from winrt.windows.devices.bluetooth import BluetoothConnectionStatus
 
                 connected = (
-                    bt_device.connection_status
-                    == BluetoothConnectionStatus.CONNECTED
+                    bt_device.connection_status == BluetoothConnectionStatus.CONNECTED
                 )
                 self._connected_state[mac] = connected
 
@@ -300,7 +295,7 @@ class WindowsBackend:
                         address=mac,
                         name=bt_device.name or mac,
                         adapter_path=adapter_path or "",
-                        paired=True,   # selector only returns paired devices
+                        paired=True,  # selector only returns paired devices
                         trusted=True,  # paired = trusted on Windows
                         connected=connected,
                     )
@@ -314,9 +309,7 @@ class WindowsBackend:
                     self._connection_tokens[mac] = token
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "WindowsBackend: error enumerating Classic devices: %s", exc
-            )
+            logger.warning("WindowsBackend: error enumerating Classic devices: %s", exc)
 
         # ── Bluetooth LE ──────────────────────────────────────────────────
         try:
@@ -341,8 +334,7 @@ class WindowsBackend:
                 from winrt.windows.devices.bluetooth import BluetoothConnectionStatus
 
                 connected = (
-                    le_device.connection_status
-                    == BluetoothConnectionStatus.CONNECTED
+                    le_device.connection_status == BluetoothConnectionStatus.CONNECTED
                 )
                 self._connected_state[mac] = connected
 
@@ -365,9 +357,7 @@ class WindowsBackend:
                     self._connection_tokens[mac] = token
 
         except Exception as exc:  # noqa: BLE001
-            logger.warning(
-                "WindowsBackend: error enumerating LE devices: %s", exc
-            )
+            logger.warning("WindowsBackend: error enumerating LE devices: %s", exc)
 
         return devices
 
@@ -420,9 +410,7 @@ class WindowsBackend:
             bt_device = await bt.BluetoothDevice.from_bluetooth_address_async(
                 address_int
             )
-            services = (
-                await bt_device.get_rfcomm_services_async()
-            )
+            services = await bt_device.get_rfcomm_services_async()
             if services and services.error == 0 and len(services.services) > 0:
                 # Opening a service handle triggers Windows to establish the
                 # underlying ACL connection; we open and immediately close it.
@@ -439,9 +427,7 @@ class WindowsBackend:
                 )
                 return
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "WindowsBackend: Classic connect failed mac=%s: %s", mac, exc
-            )
+            logger.debug("WindowsBackend: Classic connect failed mac=%s: %s", mac, exc)
 
         # ── Try BLE GATT ──────────────────────────────────────────────────
         try:
@@ -451,14 +437,10 @@ class WindowsBackend:
             # Requesting any GATT service forces Windows to connect.
             gatt_result = await le_device.get_gatt_services_async()
             if gatt_result and gatt_result.status == 0:
-                logger.info(
-                    "WindowsBackend: BLE GATT connect succeeded mac=%s", mac
-                )
+                logger.info("WindowsBackend: BLE GATT connect succeeded mac=%s", mac)
                 return
         except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "WindowsBackend: BLE connect failed mac=%s: %s", mac, exc
-            )
+            logger.debug("WindowsBackend: BLE connect failed mac=%s: %s", mac, exc)
 
         raise DeviceConnectionError(
             mac,
@@ -488,9 +470,7 @@ class WindowsBackend:
 
     # ── Internal event handling ───────────────────────────────────────────
 
-    def _make_connection_status_handler(
-        self, mac: str
-    ) -> Any:
+    def _make_connection_status_handler(self, mac: str) -> Any:
         """Return a WinRT-compatible sync event handler for *mac*.
 
         The handler is called by Windows on a thread-pool thread whenever
@@ -504,8 +484,7 @@ class WindowsBackend:
 
             try:
                 connected = (
-                    sender.connection_status
-                    == bt.BluetoothConnectionStatus.CONNECTED
+                    sender.connection_status == bt.BluetoothConnectionStatus.CONNECTED
                 )
             except Exception:  # noqa: BLE001
                 return
@@ -518,7 +497,7 @@ class WindowsBackend:
             self._event_queue.put_nowait(
                 (
                     "properties_changed",
-                    mac,   # used as object_path
+                    mac,  # used as object_path
                     _DEVICE_IFACE,
                     {"Connected": connected},
                 )
@@ -550,6 +529,4 @@ class WindowsBackend:
                 try:
                     await self._callback(event_type, path, iface, changed)
                 except Exception:  # noqa: BLE001
-                    logger.exception(
-                        "WindowsBackend: error in event callback"
-                    )
+                    logger.exception("WindowsBackend: error in event callback")

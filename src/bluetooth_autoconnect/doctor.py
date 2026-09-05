@@ -235,9 +235,7 @@ def _render(report: DoctorReport) -> None:
 
     print()
     if report.has_failures:
-        print(
-            f"  {_RED}{_BOLD}Some checks failed.  See details above.{_RESET}\n"
-        )
+        print(f"  {_RED}{_BOLD}Some checks failed.  See details above.{_RESET}\n")
     else:
         print(f"  {_GREEN}{_BOLD}All checks passed.{_RESET}\n")
 
@@ -285,9 +283,7 @@ def run_doctor(backend: BluetoothBackend | None = None) -> int:
     if backend is None:
         backend_result, adapters, devices = asyncio.run(_check_bluez_async())
     else:
-        backend_result, adapters, devices = asyncio.run(
-            _check_backend_async(backend)
-        )
+        backend_result, adapters, devices = asyncio.run(_check_backend_async(backend))
     report.add(backend_result)
 
     if backend_result.passed:
