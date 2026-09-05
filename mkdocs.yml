@@ -1,7 +1,7 @@
 site_name: bluetooth-autoconnect
 site_description: BlueZ-powered Bluetooth auto-connect daemon
-site_url: https://example.github.io/bluetooth-autoconnect/
-repo_url: https://github.com/example/bluetooth-autoconnect
+site_url: https://Zero-day-Exploit-np.github.io/bluetooth-autoconnect/
+repo_url: https://github.com/Zero-day-Exploit-np/bluetooth-autoconnect
 nav:
   - Home: index.md
   - Installation: INSTALL.md
