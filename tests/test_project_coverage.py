@@ -286,7 +286,7 @@ def test_bluez_client_getters_and_connect_device(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "bluetooth_autoconnect.dbus_client.MessageBus",
+        "bluetooth_autoconnect.backends.linux.MessageBus",
         lambda *args, **kwargs: FakeBus(),
     )
     client = BlueZClient()
@@ -309,7 +309,7 @@ def test_bluez_client_getters_and_connect_device(
 
 def test_bluez_client_subscribe_runs_callbacks(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "bluetooth_autoconnect.dbus_client.MessageBus",
+        "bluetooth_autoconnect.backends.linux.MessageBus",
         lambda *args, **kwargs: FakeBus(),
     )
     client = BlueZClient()
@@ -450,7 +450,7 @@ def test_dbus_client_connect_errors_are_translated() -> None:
 
     monkeypatcher = pytest.MonkeyPatch()
     monkeypatcher.setattr(
-        "bluetooth_autoconnect.dbus_client.MessageBus",
+        "bluetooth_autoconnect.backends.linux.MessageBus",
         lambda *args, **kwargs: BoomBus(),
     )
     try:
@@ -475,7 +475,7 @@ def test_dbus_client_connect_errors_are_translated() -> None:
 
     monkeypatcher = pytest.MonkeyPatch()
     monkeypatcher.setattr(
-        "bluetooth_autoconnect.dbus_client.MessageBus",
+        "bluetooth_autoconnect.backends.linux.MessageBus",
         lambda *args, **kwargs: MissingBlueZBus(),
     )
     try:

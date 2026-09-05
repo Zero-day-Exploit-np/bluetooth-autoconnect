@@ -11,9 +11,11 @@ from pathlib import Path
 from typing import Any
 
 from . import __version__
+from .backends import BluetoothBackend, create_backend
 from .connector import RetryPolicy
 from .daemon import AutoConnectDaemon
 from .exceptions import (
+    BackendError,
     BluetoothAutoConnectError,
     BlueZNotAvailableError,
     DBusConnectionError,
@@ -38,7 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
             "  bluetooth-autoconnect                       "
             "Scan adapters and connect trusted devices once.\n"
             "  bluetooth-autoconnect --daemon              "
-            "Run continuously, reacting to D-Bus events.\n"
+            "Run continuously, reacting to backend events.\n"
             "  bluetooth-autoconnect --daemon --debug      "
             "Run as a daemon with debug logging.\n"
             "  bluetooth-autoconnect --daemon              "
@@ -101,6 +103,17 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--backend",
+        type=str,
+        default=None,
+        metavar="NAME",
+        choices=["linux", "windows"],
+        help=(
+            "Force a specific platform backend (default: auto-detect). "
+            "Valid values: linux, windows."
+        ),
+    )
+    parser.add_argument(
         "--version", action="version", version=f"%(prog)s {__version__}"
     )
 
@@ -110,7 +123,7 @@ def build_parser() -> argparse.ArgumentParser:
         "doctor",
         help=(
             "Run diagnostic health checks"
-            " (bluetooth.service, D-Bus, BlueZ, adapters, devices)."
+            " (Bluetooth service, adapters, devices)."
         ),
     )
 
@@ -166,18 +179,7 @@ def _load_config(config_path: Path | None) -> dict[str, Any]:
 def _build_hook_runner_from_config(
     raw: dict[str, Any],
 ) -> Any:  # returns HookRunner | None
-    """Extract the hooks section from a raw config dict and build a HookRunner.
-
-    Imported lazily to keep the normal (no-hooks) startup path free of the
-    import cost.
-
-    Args:
-        raw: Top-level parsed YAML dict.
-
-    Returns:
-        A :class:`~bluetooth_autoconnect.hooks.HookRunner` instance, or
-        ``None`` if no hooks are configured or all entries are invalid.
-    """
+    """Extract the hooks section from a raw config dict and build a HookRunner."""
     hooks_raw = raw.get("hooks")
     if not hooks_raw or not isinstance(hooks_raw, dict):
         return None
@@ -195,7 +197,10 @@ def _build_hook_runner_from_config(
     )
 
 
-async def _async_main(args: argparse.Namespace) -> int:
+async def _async_main(
+    args: argparse.Namespace,
+    backend: BluetoothBackend,
+) -> int:
     policy = RetryPolicy(max_attempts=args.max_attempts)
 
     async def _await_if_needed(result: Any) -> Any:
@@ -219,6 +224,7 @@ async def _async_main(args: argparse.Namespace) -> int:
             max_concurrency=args.max_concurrency,
             rescan_interval=args.rescan_interval,
             hook_runner=hook_runner,
+            backend=backend,
         )
         await daemon.run_forever()
         return 0
@@ -228,6 +234,7 @@ async def _async_main(args: argparse.Namespace) -> int:
         max_concurrency=args.max_concurrency,
         rescan_interval=0,  # one-shot mode: no background scanning
         hook_runner=hook_runner,
+        backend=backend,
     )
     try:
         await _await_if_needed(daemon.client.connect())
@@ -248,6 +255,13 @@ def main(argv: list[str] | None = None) -> int:
     debug = args.debug or args.verbose
     configure_logging(debug=debug)
 
+    # ── Resolve backend (may raise BackendNotAvailableError) ──────────────
+    try:
+        backend = create_backend(backend=args.backend)
+    except BackendError as exc:
+        logger.error("Could not initialise Bluetooth backend: %s", exc)
+        return 2
+
     # ── doctor subcommand (sync, no asyncio needed) ───────────────────────
     if args.subcommand == "doctor":
         from .doctor import run_doctor
@@ -255,11 +269,11 @@ def main(argv: list[str] | None = None) -> int:
         return run_doctor()
 
     try:
-        return asyncio.run(_async_main(args))
+        return asyncio.run(_async_main(args, backend))
     except KeyboardInterrupt:
         logger.info("Interrupted by user.")
         return 130
-    except (DBusConnectionError, BlueZNotAvailableError) as exc:
+    except (DBusConnectionError, BlueZNotAvailableError, BackendError) as exc:
         logger.error(str(exc))
         return 2
     except BluetoothAutoConnectError as exc:

@@ -151,7 +151,7 @@ def test_schedule_is_silent_when_no_loop() -> None:
 
     coro = _noop()
     try:
-        with patch("bluetooth_autoconnect.dbus_client.asyncio.get_event_loop") as m:
+        with patch("bluetooth_autoconnect.backends.linux.asyncio.get_event_loop") as m:
             m.side_effect = RuntimeError("no loop")
             dc._schedule(coro)  # must not raise
     finally:
@@ -170,7 +170,7 @@ class TestInterfacesAdded:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
         )
         seen: list = []
@@ -197,7 +197,7 @@ class TestInterfacesAdded:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
         )
         seen: list = []
@@ -228,7 +228,7 @@ class TestInterfacesAdded:
 class TestInterfacesRemoved:
     def test_removed_callback_fires(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
         )
         seen: list = []
@@ -263,7 +263,7 @@ class TestPropertiesChanged:
         msg: SimpleNamespace,
     ) -> list:
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
         )
         seen: list = []
@@ -452,7 +452,7 @@ class TestDaemonReconnectPipeline:
         """End-to-end: adapter power-on signal → daemon detects it → run_once called."""
         daemon = AutoConnectDaemon()
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
         )
 

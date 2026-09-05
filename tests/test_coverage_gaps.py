@@ -52,7 +52,7 @@ def test_unwrap_variant() -> None:
 
     import bluetooth_autoconnect.dbus_client as dc
 
-    with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
+    with _patch("bluetooth_autoconnect.backends.linux.Variant", FakeVariant):
         assert dc._unwrap(FakeVariant(99)) == 99
         assert dc._unwrap(FakeVariant(FakeVariant(7))) == 7
 
@@ -62,7 +62,7 @@ def test_unwrap_list() -> None:
 
     import bluetooth_autoconnect.dbus_client as dc
 
-    with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
+    with _patch("bluetooth_autoconnect.backends.linux.Variant", FakeVariant):
         result = dc._unwrap([FakeVariant(1), FakeVariant(2)])
         assert result == [1, 2]
 
@@ -72,7 +72,7 @@ def test_unwrap_nested_dict() -> None:
 
     import bluetooth_autoconnect.dbus_client as dc
 
-    with _patch("bluetooth_autoconnect.dbus_client.Variant", FakeVariant):
+    with _patch("bluetooth_autoconnect.backends.linux.Variant", FakeVariant):
         result = dc._unwrap({"a": FakeVariant(10), "b": [FakeVariant(20)]})
         assert result == {"a": 10, "b": [20]}
 
@@ -180,7 +180,7 @@ def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) 
 
     async def runner():
         monkeypatch.setattr(
-            "bluetooth_autoconnect.dbus_client.MessageBus",
+            "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: FakeBus(),
         )
         client = BlueZClient()

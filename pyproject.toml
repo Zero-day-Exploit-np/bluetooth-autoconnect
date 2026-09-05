@@ -34,6 +34,12 @@ dependencies = [
 
 [project.optional-dependencies]
 journal = ["systemd-python>=235"]
+windows = [
+    "winrt-Windows.Devices.Bluetooth>=2.0",
+    "winrt-Windows.Devices.Enumeration>=2.0",
+    "winrt-Windows.Devices.Radios>=2.0",
+    "winrt-Windows.Networking.Sockets>=2.0",
+]
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.23",
@@ -80,7 +86,13 @@ addopts = "--cov=bluetooth_autoconnect --cov-report=term-missing --cov-fail-unde
 
 [tool.coverage.run]
 source = ["bluetooth_autoconnect"]
-omit = ["*/tests/*", "*/__main__.py"]
+omit = [
+    "*/tests/*",
+    "*/__main__.py",
+    # Windows-only backend — cannot be exercised on Linux CI.
+    # Covered by platform-specific CI when Windows runners are added.
+    "*/backends/windows.py",
+]
 
 [tool.coverage.report]
 fail_under = 90

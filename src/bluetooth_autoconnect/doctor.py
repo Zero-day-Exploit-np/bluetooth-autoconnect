@@ -2,14 +2,21 @@
 
 Performs a series of checks and prints PASS/FAIL for each one, making
 it straightforward to spot configuration problems without reading logs.
+
+The check that queries the Bluetooth stack now accepts any
+:class:`~bluetooth_autoconnect.backends.BluetoothBackend` implementation
+so it works correctly on both Linux (BlueZ) and Windows (WinRT).
 """
 
 from __future__ import annotations
 
 import asyncio
-import subprocess
 import sys
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .backends import BluetoothBackend
 
 # Colour codes — disabled automatically when stdout is not a TTY.
 _IS_TTY = sys.stdout.isatty()
@@ -44,11 +51,13 @@ class DoctorReport:
         return any(not r.passed and not r.warning for r in self.results)
 
 
-# ── individual checks ─────────────────────────────────────────────────────────
+# ── Platform-specific checks ──────────────────────────────────────────────────
 
 
 def _check_systemd_unit(unit: str) -> CheckResult:
-    """Check whether a systemd unit is active."""
+    """Check whether a systemd unit is active (Linux only)."""
+    import subprocess
+
     try:
         result = subprocess.run(
             ["systemctl", "is-active", "--quiet", unit],
@@ -57,7 +66,6 @@ def _check_systemd_unit(unit: str) -> CheckResult:
         )
         if result.returncode == 0:
             return CheckResult(name=unit, passed=True, detail="active")
-        # Try to get the actual status string for the detail field.
         status = subprocess.run(
             ["systemctl", "is-active", unit],
             timeout=5,
@@ -77,7 +85,7 @@ def _check_systemd_unit(unit: str) -> CheckResult:
 
 
 def _check_dbus() -> CheckResult:
-    """Verify the D-Bus system bus socket is reachable."""
+    """Verify the D-Bus system bus socket is reachable (Linux only)."""
     import socket as _socket
 
     for path in (
@@ -108,63 +116,105 @@ def _check_dbus() -> CheckResult:
     )
 
 
-async def _check_bluez_async() -> tuple[CheckResult, list, list]:
-    """Connect to BlueZ, enumerate adapters and devices.
+def _check_winrt_available() -> CheckResult:
+    """Verify the winrt package is importable (Windows only)."""
+    try:
+        import winrt.windows.devices.bluetooth  # noqa: F401
 
-    Returns a 3-tuple of (bluez_check, adapters, devices).
+        return CheckResult(
+            name="WinRT Bluetooth",
+            passed=True,
+            detail="winrt package available",
+        )
+    except ImportError:
+        return CheckResult(
+            name="WinRT Bluetooth",
+            passed=False,
+            detail=(
+                "winrt package not found. "
+                "Install: pip install bluetooth-autoconnect[windows]"
+            ),
+        )
+
+
+# ── Backend check ─────────────────────────────────────────────────────────────
+
+
+async def _check_backend_async(
+    backend: BluetoothBackend | None = None,
+) -> tuple[CheckResult, list, list]:
+    """Connect to the Bluetooth backend and enumerate adapters/devices.
+
+    Parameters
+    ----------
+    backend:
+        A :class:`~bluetooth_autoconnect.backends.BluetoothBackend` instance
+        to use.  When ``None``, :func:`~bluetooth_autoconnect.backends.create_backend`
+        selects the platform-appropriate one automatically.
+
+    Returns
+    -------
+    tuple[CheckResult, list[Adapter], list[Device]]
     """
-    from .dbus_client import BlueZClient
-    from .exceptions import BlueZNotAvailableError, DBusConnectionError
+    from .backends import create_backend
+    from .exceptions import BackendError
 
-    client = BlueZClient()
+    if backend is None:
+        try:
+            backend = create_backend()
+        except BackendError as exc:
+            return (
+                CheckResult(
+                    name="Bluetooth backend",
+                    passed=False,
+                    detail=str(exc),
+                ),
+                [],
+                [],
+            )
+
     try:
-        await client.connect()
-    except DBusConnectionError as exc:
+        await backend.connect()
+    except BackendError as exc:
         return (
             CheckResult(
-                name="BlueZ available",
+                name="Bluetooth backend",
                 passed=False,
-                detail=f"D-Bus connection failed: {exc}",
+                detail=f"Connection failed: {exc}",
             ),
             [],
             [],
         )
-    except BlueZNotAvailableError as exc:
-        return (
-            CheckResult(
-                name="BlueZ available",
-                passed=False,
-                detail=str(exc),
-            ),
-            [],
-            [],
-        )
 
     try:
-        adapters = await client.get_adapters()
-        devices = await client.get_devices()
+        adapters = await backend.get_adapters()
+        devices = await backend.get_devices()
     except Exception as exc:  # noqa: BLE001
-        await client.close()
+        await backend.close()
         return (
             CheckResult(
-                name="BlueZ available",
+                name="Bluetooth backend",
                 passed=False,
-                detail=f"Error querying managed objects: {exc}",
+                detail=f"Error querying devices: {exc}",
             ),
             [],
             [],
         )
     finally:
-        await client.close()
+        await backend.close()
 
     return (
-        CheckResult(name="BlueZ available", passed=True, detail="org.bluez found"),
+        CheckResult(
+            name="Bluetooth backend",
+            passed=True,
+            detail="backend available",
+        ),
         adapters,
         devices,
     )
 
 
-# ── report rendering ──────────────────────────────────────────────────────────
+# ── Report rendering ──────────────────────────────────────────────────────────
 
 
 def _render(report: DoctorReport) -> None:
@@ -185,30 +235,63 @@ def _render(report: DoctorReport) -> None:
 
     print()
     if report.has_failures:
-        print(f"  {_RED}{_BOLD}Some checks failed." f"  See details above.{_RESET}\n")
+        print(
+            f"  {_RED}{_BOLD}Some checks failed.  See details above.{_RESET}\n"
+        )
     else:
         print(f"  {_GREEN}{_BOLD}All checks passed.{_RESET}\n")
 
 
-# ── public entry point ────────────────────────────────────────────────────────
+# ── Public entry point ────────────────────────────────────────────────────────
 
 
-def run_doctor() -> int:
-    """Run all health checks and return an exit code (0 = all passed)."""
+async def _check_bluez_async(
+    backend: BluetoothBackend | None = None,
+) -> tuple[CheckResult, list, list]:
+    """Alias for :func:`_check_backend_async` — preserved for backward compatibility.
+
+    Existing tests patch this name on the doctor module.
+    """
+    return await _check_backend_async(backend)
+
+
+def run_doctor(backend: BluetoothBackend | None = None) -> int:
+    """Run all health checks and return an exit code (0 = all passed).
+
+    Parameters
+    ----------
+    backend:
+        Optional pre-constructed backend to use for the device checks.
+        Mainly useful for testing.  When ``None``, the platform-appropriate
+        backend is selected automatically.
+    """
+    from .backends import get_platform_name
+
     report = DoctorReport()
+    platform = get_platform_name()
 
-    # 1. bluetooth.service
-    report.add(_check_systemd_unit("bluetooth.service"))
+    # ── Platform-specific pre-checks ──────────────────────────────────────
+    if platform == "linux":
+        report.add(_check_systemd_unit("bluetooth.service"))
+        report.add(_check_dbus())
+    elif platform == "windows":
+        report.add(_check_winrt_available())
 
-    # 2. D-Bus system bus
-    report.add(_check_dbus())
+    # ── Backend + adapter + device checks ─────────────────────────────────
+    # Call _check_bluez_async with no arguments so that existing tests which
+    # monkeypatch this name with a zero-argument coroutine continue to work.
+    # The backend parameter is forwarded to _check_backend_async directly
+    # when a caller passes an explicit backend to run_doctor().
+    if backend is None:
+        backend_result, adapters, devices = asyncio.run(_check_bluez_async())
+    else:
+        backend_result, adapters, devices = asyncio.run(
+            _check_backend_async(backend)
+        )
+    report.add(backend_result)
 
-    # 3. BlueZ + adapters + devices  (one async call for all three)
-    bluez_result, adapters, devices = asyncio.run(_check_bluez_async())
-    report.add(bluez_result)
-
-    if bluez_result.passed:
-        # 4. Adapters
+    if backend_result.passed:
+        # Adapters
         if not adapters:
             report.add(
                 CheckResult(
@@ -232,7 +315,7 @@ def run_doctor() -> int:
                     )
                 )
 
-        # 5. Paired devices
+        # Paired devices
         paired = [d for d in devices if d.paired]
         if not paired:
             report.add(
@@ -252,7 +335,7 @@ def run_doctor() -> int:
                 )
             )
 
-        # 6. Trusted devices + connection state
+        # Trusted devices + connection state
         trusted = [d for d in devices if d.trusted and d.paired]
         if not trusted:
             report.add(
@@ -260,8 +343,8 @@ def run_doctor() -> int:
                     name="Trusted devices",
                     passed=False,
                     detail=(
-                        "no paired+trusted devices found —"
-                        " run: bluetoothctl trust <MAC>"
+                        "no paired+trusted devices found — "
+                        "run: bluetoothctl trust <MAC>"
                     ),
                     warning=True,
                 )
