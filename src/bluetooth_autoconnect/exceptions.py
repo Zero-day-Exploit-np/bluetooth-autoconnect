@@ -68,6 +68,20 @@ class DeviceConnectionError(BluetoothAutoConnectError):
         super().__init__(f"Failed to connect {device_address}: {reason}")
 
 
+class DeviceAlreadyConnectedError(BluetoothAutoConnectError):
+    """Raised when BlueZ reports the device is already connected.
+
+    This is not a real failure — the device is connected.  Callers must
+    treat it as success and reset any backoff state.
+
+    Corresponds to the BlueZ D-Bus error ``org.bluez.Error.AlreadyConnected``.
+    """
+
+    def __init__(self, device_address: str) -> None:
+        self.device_address = device_address
+        super().__init__(f"{device_address} is already connected")
+
+
 # ── Hook exceptions ───────────────────────────────────────────────────────────
 
 

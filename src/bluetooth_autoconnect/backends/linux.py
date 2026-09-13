@@ -62,12 +62,27 @@ def _schedule(coro: Any) -> None:  # noqa: ANN401
     within its message-dispatch loop.  We cannot ``await`` from there, so
     we post the coroutine as a task instead.
 
-    Falls back silently when there is no running loop (test environments).
+    Uses ``asyncio.get_running_loop()`` (Python 3.7+) which is the correct
+    API for obtaining the *currently executing* loop from within an async
+    context.  ``asyncio.get_event_loop()`` is deprecated for this use-case
+    in Python 3.10+ and may return the wrong loop or silently create a new
+    one, causing reconnect events to be dropped.
+
+    Falls back to a WARNING (not DEBUG) when no loop is running, so that
+    discarded reconnect events are visible in logs rather than invisible.
     """
     try:
-        asyncio.get_event_loop().create_task(coro)
+        loop = asyncio.get_running_loop()
+        loop.create_task(coro)
     except RuntimeError:
-        logger.debug("_schedule: no running event loop — coroutine discarded.")
+        # No running loop — can happen in unit tests that exercise the
+        # synchronous callback helpers outside an async context.
+        # In production (daemon mode) this must never occur; log at WARNING
+        # so it is visible if it does.
+        logger.warning(
+            "_schedule: no running event loop — reconnect event discarded. "
+            "This is a bug; please report it."
+        )
 
 
 # ── LinuxBackend ──────────────────────────────────────────────────────────────

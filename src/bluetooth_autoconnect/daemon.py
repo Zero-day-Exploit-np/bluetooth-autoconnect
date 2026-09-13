@@ -17,6 +17,11 @@ duration grows exponentially (1 min → 2 min → 4 min → 8 min → 16 min,
 capped at 30 min).  When a device reconnects successfully the cooldown
 entry is removed so the next disconnect starts the sequence over.
 
+The backoff is respected by BOTH the event-driven path and the periodic
+scanner.  When a disconnect event arrives for a device that is already in
+backoff, the reconnect is deferred to the periodic scanner rather than
+attempting immediately — this prevents hammering an out-of-range device.
+
 Hook state-transition gating
 -----------------------------
 Hooks are fired **only on genuine state transitions**, not on every
@@ -99,6 +104,10 @@ class _DeviceCooldown:
         """Return True when the cooldown period has elapsed."""
         return time.monotonic() >= self.retry_after
 
+    def seconds_remaining(self) -> float:
+        """Return seconds until this cooldown expires (0 if already ready)."""
+        return max(0.0, self.retry_after - time.monotonic())
+
 
 class _CooldownRegistry:
     """Single-loop registry of per-device cooldowns."""
@@ -120,27 +129,38 @@ class _CooldownRegistry:
 
     def reset(self, mac: str) -> None:
         """Remove cooldown — called when a device successfully connects."""
-        self._entries.pop(mac, None)
-        logger.debug("backoff reset: mac=%s", mac)
+        if mac in self._entries:
+            self._entries.pop(mac)
+            logger.debug("backoff reset: mac=%s", mac)
 
     def filter_ready(self, devices: list[Device]) -> list[Device]:
-        """Return only devices that are past their backoff window."""
-        ready, skipped = [], []
+        """Return only devices that are past their backoff window.
+
+        Devices still in cooldown are logged at DEBUG with the remaining wait,
+        so users can diagnose why a device is not being retried.
+        """
+        ready: list[Device] = []
         for d in devices:
-            if self.is_ready(d.address):
+            entry = self._entries.get(d.address)
+            if entry is None or entry.ready:
                 ready.append(d)
             else:
-                skipped.append(d)
-        for d in skipped:
-            entry = self._entries[d.address]
-            remaining = max(0.0, entry.retry_after - time.monotonic())
-            logger.debug(
-                "periodic scan: skipping mac=%s name=%r (backoff, retry_in=%.0fs)",
-                d.address,
-                d.name,
-                remaining,
-            )
+                logger.debug(
+                    "reconnect suppressed by backoff:"
+                    " mac=%s name=%r retry_in=%.0fs level=%d",
+                    d.address,
+                    d.name,
+                    entry.seconds_remaining(),
+                    entry.level,
+                )
         return ready
+
+    def seconds_until_ready(self, mac: str) -> float:
+        """Return seconds until *mac* is ready for a retry attempt."""
+        entry = self._entries.get(mac)
+        if entry is None:
+            return 0.0
+        return entry.seconds_remaining()
 
 
 # ── Connection state tracker ──────────────────────────────────────────────────
@@ -293,6 +313,15 @@ class AutoConnectDaemon:
         Returns a dict mapping MAC address → success bool.  The cooldown
         registry is updated: failures advance backoff, successes reset it.
 
+        Backoff behaviour
+        ~~~~~~~~~~~~~~~~~
+        The cooldown registry is consulted before each connection attempt.
+        Devices still within their backoff window are skipped with a DEBUG
+        log so the user can see exactly why reconnection is not happening.
+        This ensures that a burst of disconnect events (e.g. multiple BlueZ
+        profile drops) cannot bypass the backoff the way the previous
+        implementation allowed.
+
         Hook behaviour
         ~~~~~~~~~~~~~~
         ``on_connect`` hooks are intentionally **not** fired here, even when
@@ -325,48 +354,98 @@ class AutoConnectDaemon:
             logger.debug("adapter path=%s address=%s", adapter.path, adapter.address)
             devices = await self.client.get_devices(adapter_path=adapter.path)
             eligible = [d for d in devices if d.is_autoconnect_eligible]
+
             logger.info(
                 "%s: %d device(s) known, %d paired+trusted",
                 adapter.name,
                 len(devices),
                 len(eligible),
             )
+
             for device in eligible:
                 logger.debug(
-                    "trusted device detected: name=%r mac=%s path=%s connected=%s",
+                    "device: name=%r mac=%s Paired=%s Trusted=%s Connected=%s",
                     device.name,
                     device.address,
-                    device.path,
+                    device.paired,
+                    device.trusted,
                     device.connected,
                 )
+
+            # Filter ineligible: not paired or not trusted
+            for device in devices:
+                if not device.is_autoconnect_eligible:
+                    logger.debug(
+                        "skipping mac=%s: Paired=%s Trusted=%s",
+                        device.address,
+                        device.paired,
+                        device.trusted,
+                    )
+
+            # Filter out devices in their backoff window.
+            # This is the key fix for Bug 3: the event-driven path previously
+            # bypassed the cooldown entirely; now it respects it the same way
+            # the periodic scanner does.
+            needs_connect = [d for d in eligible if not d.connected]
+            candidates = self._cooldown.filter_ready(needs_connect)
+
+            # Devices already connected are reported as success without dialling.
+            for device in eligible:
+                if device.connected:
+                    all_results[device.address] = True
+
+            if not candidates:
+                if needs_connect:
+                    logger.info(
+                        "%s: %d disconnected device(s) deferred"
+                        " — all in backoff (periodic scanner will retry)",
+                        adapter.name,
+                        len(needs_connect),
+                    )
+                continue
+
+            logger.info(
+                "%s: attempting to connect %d device(s): %s",
+                adapter.name,
+                len(candidates),
+                ", ".join(
+                    f"{d.name} ({d.address})" for d in candidates
+                ),
+            )
+
             results = await connect_all(
-                devices,
+                candidates,
                 self.client.connect_device,
                 policy=self.policy,
                 max_concurrency=self.max_concurrency,
             )
             for addr, ok in results.items():
                 if ok:
-                    logger.debug("connection succeeded: mac=%s", addr)
+                    logger.info("reconnect succeeded: mac=%s", addr)
                     self._cooldown.reset(addr)
                     # on_connect hooks are NOT fired here — see docstring.
                 else:
-                    logger.debug("connection failed: mac=%s", addr)
+                    logger.info("reconnect failed: mac=%s — scheduling backoff", addr)
                     self._cooldown.record_failure(addr)
             all_results.update(results)
 
         succeeded = sum(1 for ok in all_results.values() if ok)
-        logger.info(
-            "Connection pass complete: %d/%d eligible device(s) connected.",
-            succeeded,
-            len(all_results),
-        )
+        total = len(all_results)
+        if total:
+            logger.info(
+                "Connection pass complete: %d/%d device(s) connected.",
+                succeeded,
+                total,
+            )
         return all_results
 
     # ── Periodic scan ─────────────────────────────────────────────────────
 
     async def _run_one_periodic_scan(self) -> None:
         """Execute a single periodic-scan pass: enumerate and reconnect.
+
+        This is the fallback path for devices that return to range without
+        generating a D-Bus event.  It always respects the backoff window.
 
         Extracted from ``_periodic_scan_loop`` so tests can drive it directly
         without waiting for the sleep timer.
@@ -383,28 +462,38 @@ class AutoConnectDaemon:
 
             for adapter in powered:
                 devices = await self.client.get_devices(adapter_path=adapter.path)
-                eligible = [
-                    d for d in devices if d.is_autoconnect_eligible and not d.connected
+                # Only target eligible, disconnected devices.
+                eligible_disconnected = [
+                    d for d in devices
+                    if d.is_autoconnect_eligible and not d.connected
                 ]
 
-                candidates = self._cooldown.filter_ready(eligible)
+                # Respect backoff — devices in their cooldown window are skipped.
+                candidates = self._cooldown.filter_ready(eligible_disconnected)
 
                 if not candidates:
-                    logger.debug(
-                        "periodic scan: no candidates on %s"
-                        " (all connected or in backoff)",
-                        adapter.name,
-                    )
+                    if eligible_disconnected:
+                        logger.debug(
+                            "periodic scan %s: %d disconnected device(s)"
+                            " all in backoff",
+                            adapter.name,
+                            len(eligible_disconnected),
+                        )
+                    else:
+                        logger.debug(
+                            "periodic scan %s: no disconnected trusted devices",
+                            adapter.name,
+                        )
                     continue
 
-                for device in candidates:
-                    logger.debug(
-                        "periodic scan: disconnected trusted device"
-                        " found — mac=%s name=%r path=%s",
-                        device.address,
-                        device.name,
-                        device.path,
-                    )
+                logger.info(
+                    "periodic scan %s: reconnecting %d device(s): %s",
+                    adapter.name,
+                    len(candidates),
+                    ", ".join(
+                        f"{d.name} ({d.address})" for d in candidates
+                    ),
+                )
 
                 results = await connect_all(
                     candidates,
@@ -415,11 +504,17 @@ class AutoConnectDaemon:
 
                 for addr, ok in results.items():
                     if ok:
-                        logger.info("periodic scan: reconnect successful mac=%s", addr)
+                        logger.info(
+                            "periodic scan: reconnect successful mac=%s", addr
+                        )
                         self._cooldown.reset(addr)
                         # on_connect hooks NOT fired here — same reason as run_once.
                     else:
-                        logger.debug("periodic scan: reconnect failed mac=%s", addr)
+                        logger.debug(
+                            "periodic scan: reconnect failed mac=%s"
+                            " — backoff advanced",
+                            addr,
+                        )
                         self._cooldown.record_failure(addr)
 
         except Exception:  # noqa: BLE001
@@ -434,7 +529,7 @@ class AutoConnectDaemon:
             )
             return
 
-        logger.debug("periodic scan started: interval=%.0fs", self.rescan_interval)
+        logger.info("periodic scan started: interval=%.0fs", self.rescan_interval)
 
         while not self._stop_event.is_set():
             await asyncio.sleep(self.rescan_interval)
@@ -488,26 +583,59 @@ class AutoConnectDaemon:
         Connection state (``Connected``) changes are routed through
         ``_DeviceStateTracker`` to ensure hooks fire only once per genuine
         transition, regardless of how many redundant signals the backend emits.
+
+        Backoff and reconnect scheduling
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+        When ``Connected=False`` arrives for a device that is in its backoff
+        window, the event is still recorded (so the hook fires correctly) but
+        no immediate ``run_once()`` is triggered.  The periodic scanner will
+        pick the device up when the cooldown expires.  This prevents the
+        event-driven path from repeatedly bypassing backoff on every
+        BlueZ profile disconnect signal.
         """
         mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
 
         if changed.get("Connected") is False:
-            logger.debug("device disconnected: path=%s — scheduling reconnect", path)
-            logger.info("Device %s disconnected; will attempt reconnect.", path)
+            logger.info(
+                "device disconnected: mac=%s path=%s", mac, path
+            )
 
+            # Update hook state tracker regardless of backoff.
             if self.hook_runner is not None:
                 should_fire = self._state_tracker.record_disconnected(mac)
                 if should_fire:
                     await self._fire_disconnect_hook(path)
                 else:
-                    logger.debug("hook: suppressed duplicate DISCONNECTED mac=%s", mac)
+                    logger.debug(
+                        "hook: suppressed duplicate DISCONNECTED mac=%s", mac
+                    )
             else:
                 self._state_tracker.record_disconnected(mac)
 
-            self._rescan_event.set()
+            # Bug 3 fix: check backoff before scheduling an immediate rescan.
+            # Previously _rescan_event was set unconditionally, which caused
+            # run_once() → connect_all() to run immediately, entirely ignoring
+            # the cooldown registry that is supposed to throttle retries.
+            if self._cooldown.is_ready(mac):
+                logger.debug(
+                    "device disconnected: mac=%s — scheduling immediate reconnect",
+                    mac,
+                )
+                self._rescan_event.set()
+            else:
+                remaining = self._cooldown.seconds_until_ready(mac)
+                logger.info(
+                    "device disconnected: mac=%s — in backoff (%.0fs remaining);"
+                    " periodic scanner will retry",
+                    mac,
+                    remaining,
+                )
+                # Do NOT set _rescan_event — let the periodic scanner handle it.
 
         elif changed.get("Connected") is True:
-            logger.debug("device connected: path=%s — resetting backoff", path)
+            logger.info(
+                "device connected: mac=%s path=%s — resetting backoff", mac, path
+            )
             self._cooldown.reset(mac)
 
             if self.hook_runner is not None:
@@ -515,37 +643,41 @@ class AutoConnectDaemon:
                 if should_fire:
                     await self._fire_connect_hook(path, mac)
                 else:
-                    logger.debug("hook: suppressed duplicate CONNECTED mac=%s", mac)
+                    logger.debug(
+                        "hook: suppressed duplicate CONNECTED mac=%s", mac
+                    )
             else:
                 self._state_tracker.record_connected(mac)
 
         elif "RSSI" in changed:
-            logger.debug(
-                "device back in range: path=%s rssi=%s"
+            # Device advertisement seen — it's back in range.
+            # Reset backoff so the next scan (periodic or event-driven) will
+            # attempt connection regardless of previous failure count.
+            logger.info(
+                "device back in range: mac=%s rssi=%s"
                 " — resetting backoff and triggering rescan",
-                path,
+                mac,
                 changed.get("RSSI"),
             )
             self._cooldown.reset(mac)
             self._rescan_event.set()
 
         elif changed.get("Trusted") is True:
-            logger.debug("device marked trusted: path=%s — triggering rescan", path)
+            logger.info(
+                "device marked trusted: mac=%s — triggering rescan", mac
+            )
             self._rescan_event.set()
 
         elif changed.get("Paired") is True:
-            logger.debug("device paired: path=%s — triggering rescan", path)
+            logger.info(
+                "device paired: mac=%s — triggering rescan", mac
+            )
             self._rescan_event.set()
 
     # ── Hook helpers ──────────────────────────────────────────────────────
 
     async def _fire_connect_hook(self, device_path: str, mac: str) -> None:
-        """Look up a device and fire the on_connect hook.
-
-        Args:
-            device_path: Backend-specific device identifier.
-            mac:         MAC address derived from the path or event.
-        """
+        """Look up a device and fire the on_connect hook."""
         assert self.hook_runner is not None  # guarded by caller
         device: Device | None = None
         try:
@@ -573,15 +705,7 @@ class AutoConnectDaemon:
         self.hook_runner.fire(HookEvent.CONNECTED, device)
 
     async def _fire_disconnect_hook(self, device_path: str) -> None:
-        """Look up a device by path and fire the on_disconnect hook.
-
-        If the device cannot be found in the backend (it may have been removed
-        immediately after disconnect), a synthetic Device record is constructed
-        from the path so the hook still receives ``BT_DEVICE_MAC``.
-
-        Args:
-            device_path: Backend-specific device identifier.
-        """
+        """Look up a device by path and fire the on_disconnect hook."""
         assert self.hook_runner is not None  # guarded by caller
         device: Device | None = None
         try:

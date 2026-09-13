@@ -12,6 +12,8 @@ from typing import Any
 
 from . import __version__
 from .backends import BluetoothBackend, create_backend
+from .config import DaemonConfig
+from .config import RetryConfig as _RetryConfigModel
 from .connector import RetryPolicy
 from .daemon import AutoConnectDaemon
 from .exceptions import (
@@ -196,20 +198,118 @@ def _build_hook_runner_from_config(
     )
 
 
+def _build_daemon_config_from_raw(raw: dict[str, Any]) -> DaemonConfig:
+    """Parse the ``daemon:`` section of the config file into a :class:`DaemonConfig`.
+
+    Returns a ``DaemonConfig`` with defaults filled in for any missing keys.
+    Unknown keys are silently ignored so that future config fields don't
+    break older daemon versions.
+    """
+    daemon_raw = raw.get("daemon")
+    if not isinstance(daemon_raw, dict):
+        return DaemonConfig()
+    # Filter to only known fields so we don't pass garbage to the dataclass.
+    known = {
+        "rescan_interval_seconds",
+        "scan_interval",
+        "adapter",
+        "max_concurrency",
+        "enable_automatic_reconnect",
+    }
+    filtered = {k: v for k, v in daemon_raw.items() if k in known}
+    try:
+        return DaemonConfig(**filtered)
+    except TypeError as exc:
+        logger.warning(
+            "Config file daemon section is invalid: %s — using defaults", exc
+        )
+        return DaemonConfig()
+
+
+def _build_retry_config_from_raw(raw: dict[str, Any]) -> _RetryConfigModel:
+    """Parse the ``retry:`` section of the config file into a :class:`RetryConfig`."""
+    retry_raw = raw.get("retry")
+    if not isinstance(retry_raw, dict):
+        return _RetryConfigModel()
+    known = {"max_attempts", "base_delay", "max_delay", "multiplier"}
+    filtered = {k: v for k, v in retry_raw.items() if k in known}
+    try:
+        return _RetryConfigModel(**filtered)
+    except TypeError as exc:
+        logger.warning("Config file retry section is invalid: %s — using defaults", exc)
+        return _RetryConfigModel()
+
+
+# ── CLI arg defaults (used for "was this flag explicitly passed?" check) ──────
+_CLI_DEFAULTS = {
+    "max_attempts": 5,
+    "max_concurrency": 5,
+    "rescan_interval": 30.0,
+}
+
+
+def _merge_daemon_params(
+    args: argparse.Namespace,
+    daemon_cfg: DaemonConfig,
+    retry_cfg: _RetryConfigModel,
+) -> tuple[RetryPolicy, int, float]:
+    """Merge CLI args with config-file values.
+
+    CLI flags take priority when they were explicitly set (differ from the
+    argparse default).  Config-file values fill in the rest.
+
+    Returns (policy, max_concurrency, rescan_interval).
+    """
+    # max_attempts: CLI wins if the user explicitly passed --max-attempts
+    if args.max_attempts != _CLI_DEFAULTS["max_attempts"]:
+        max_attempts = args.max_attempts
+    else:
+        max_attempts = retry_cfg.max_attempts
+
+    policy = RetryPolicy(
+        max_attempts=max_attempts,
+        base_delay=retry_cfg.base_delay,
+        max_delay=retry_cfg.max_delay,
+        multiplier=retry_cfg.multiplier,
+    )
+
+    # max_concurrency: CLI wins if explicitly passed
+    if args.max_concurrency != _CLI_DEFAULTS["max_concurrency"]:
+        max_concurrency = args.max_concurrency
+    else:
+        max_concurrency = daemon_cfg.max_concurrency
+
+    # rescan_interval: CLI wins if explicitly passed
+    if args.rescan_interval != _CLI_DEFAULTS["rescan_interval"]:
+        rescan_interval = args.rescan_interval
+    else:
+        rescan_interval = float(daemon_cfg.rescan_interval_seconds)
+
+    logger.debug(
+        "effective params: max_attempts=%d max_concurrency=%d"
+        " rescan_interval=%.0fs",
+        max_attempts,
+        max_concurrency,
+        rescan_interval,
+    )
+    return policy, max_concurrency, rescan_interval
+
+
 async def _async_main(
     args: argparse.Namespace,
     backend: BluetoothBackend,
 ) -> int:
-    policy = RetryPolicy(max_attempts=args.max_attempts)
-
     async def _await_if_needed(result: Any) -> Any:
         if inspect.isawaitable(result):
             return await result
         return result
 
-    # Load config file (needed for hooks; other sections are CLI-driven).
+    # ── Load config file (all sections, not just hooks) ───────────────────
     raw_config = _load_config(args.config)
+    daemon_cfg = _build_daemon_config_from_raw(raw_config)
+    retry_cfg = _build_retry_config_from_raw(raw_config)
     hook_runner = _build_hook_runner_from_config(raw_config)
+
     if hook_runner is not None:
         logger.debug(
             "hooks enabled: on_connect=%d on_disconnect=%d",
@@ -217,11 +317,24 @@ async def _async_main(
             len(hook_runner.on_disconnect),
         )
 
+    if not daemon_cfg.enable_automatic_reconnect:
+        logger.warning(
+            "enable_automatic_reconnect=false in config — "
+            "automatic reconnection is disabled."
+        )
+
+    # Merge CLI flags with config-file values (CLI wins when explicitly set).
+    policy, max_concurrency, rescan_interval = _merge_daemon_params(
+        args, daemon_cfg, retry_cfg
+    )
+
     if args.daemon:
         daemon = AutoConnectDaemon(
             policy=policy,
-            max_concurrency=args.max_concurrency,
-            rescan_interval=args.rescan_interval,
+            max_concurrency=max_concurrency,
+            rescan_interval=(
+                rescan_interval if daemon_cfg.enable_automatic_reconnect else 0
+            ),
             hook_runner=hook_runner,
             backend=backend,
         )
@@ -230,7 +343,7 @@ async def _async_main(
 
     daemon = AutoConnectDaemon(
         policy=policy,
-        max_concurrency=args.max_concurrency,
+        max_concurrency=max_concurrency,
         rescan_interval=0,  # one-shot mode: no background scanning
         hook_runner=hook_runner,
         backend=backend,

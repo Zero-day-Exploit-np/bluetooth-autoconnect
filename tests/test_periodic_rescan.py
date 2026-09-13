@@ -202,9 +202,13 @@ class TestRunOnceCooldownIntegration:
     def test_successful_connect_resets_cooldown(self) -> None:
         daemon = self._make_daemon()
         mac = "AA:BB:CC:DD:EE:FF"
-        # Pre-populate a failure so there is something to reset
+        # Pre-populate a failure so there is something to reset, then
+        # fast-forward past the cooldown window so run_once() will attempt it.
         daemon._cooldown.record_failure(mac)
-        assert not daemon._cooldown.is_ready(mac)
+        daemon._cooldown._entries[mac].retry_after = time.monotonic() - 1
+        assert daemon._cooldown.is_ready(mac), (
+            "fast-forwarded cooldown should be ready"
+        )
 
         device = _make_device(mac, connected=False)
 
