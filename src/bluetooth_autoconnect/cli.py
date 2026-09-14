@@ -286,8 +286,7 @@ def _merge_daemon_params(
         rescan_interval = float(daemon_cfg.rescan_interval_seconds)
 
     logger.debug(
-        "effective params: max_attempts=%d max_concurrency=%d"
-        " rescan_interval=%.0fs",
+        "effective params: max_attempts=%d max_concurrency=%d" " rescan_interval=%.0fs",
         max_attempts,
         max_concurrency,
         rescan_interval,

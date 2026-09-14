@@ -206,9 +206,7 @@ class TestRunOnceCooldownIntegration:
         # fast-forward past the cooldown window so run_once() will attempt it.
         daemon._cooldown.record_failure(mac)
         daemon._cooldown._entries[mac].retry_after = time.monotonic() - 1
-        assert daemon._cooldown.is_ready(mac), (
-            "fast-forwarded cooldown should be ready"
-        )
+        assert daemon._cooldown.is_ready(mac), "fast-forwarded cooldown should be ready"
 
         device = _make_device(mac, connected=False)
 

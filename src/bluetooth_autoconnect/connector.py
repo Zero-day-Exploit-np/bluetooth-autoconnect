@@ -39,9 +39,7 @@ _BLUEZ_PAGE_TIMEOUT = "org.bluez.Error.Failed"  # BlueZ wraps page-timeout here
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
-_TRANSIENT_ERRORS: frozenset[str] = frozenset(
-    {_BLUEZ_IN_PROGRESS, _BLUEZ_NOT_READY}
-)
+_TRANSIENT_ERRORS: frozenset[str] = frozenset({_BLUEZ_IN_PROGRESS, _BLUEZ_NOT_READY})
 
 _PERMANENT_ERRORS: frozenset[str] = frozenset(
     {

@@ -119,9 +119,13 @@ class TestBug1ScheduleUsesRunningLoop:
             await asyncio.sleep(0)  # yield so the task executes
 
         asyncio.run(_runner())
-        assert ran == ["ran"], "_schedule must dispatch the coroutine on the running loop"
+        assert ran == [
+            "ran"
+        ], "_schedule must dispatch the coroutine on the running loop"
 
-    def test_schedule_warns_when_no_loop(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_schedule_warns_when_no_loop(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """When there is no running loop, _schedule logs WARNING, not DEBUG."""
         from bluetooth_autoconnect.backends.linux import _schedule
 
@@ -134,18 +138,21 @@ class TestBug1ScheduleUsesRunningLoop:
                 "bluetooth_autoconnect.backends.linux.asyncio.get_running_loop",
                 side_effect=RuntimeError("no running event loop"),
             ):
-                with caplog.at_level("WARNING", logger="bluetooth_autoconnect.backends.linux"):
+                with caplog.at_level(
+                    "WARNING", logger="bluetooth_autoconnect.backends.linux"
+                ):
                     _schedule(coro)
         finally:
             coro.close()
 
         warning_records = [
-            r for r in caplog.records
+            r
+            for r in caplog.records
             if r.levelname == "WARNING" and "no running event loop" in r.getMessage()
         ]
-        assert warning_records, (
-            "_schedule must log WARNING (not DEBUG) when no loop is running"
-        )
+        assert (
+            warning_records
+        ), "_schedule must log WARNING (not DEBUG) when no loop is running"
 
     def test_schedule_does_not_use_get_event_loop(self) -> None:
         """_schedule must call get_running_loop(), not the deprecated get_event_loop()."""
@@ -167,12 +174,12 @@ class TestBug1ScheduleUsesRunningLoop:
                 code_lines.append(line)
         code_only = "\n".join(code_lines)
 
-        assert "get_running_loop" in code_only, (
-            "_schedule must use asyncio.get_running_loop()"
-        )
-        assert "get_event_loop" not in code_only, (
-            "_schedule must NOT call the deprecated asyncio.get_event_loop()"
-        )
+        assert (
+            "get_running_loop" in code_only
+        ), "_schedule must use asyncio.get_running_loop()"
+        assert (
+            "get_event_loop" not in code_only
+        ), "_schedule must NOT call the deprecated asyncio.get_event_loop()"
 
 
 # ── Bug 2: BlueZ error classification ─────────────────────────────────────────
@@ -257,9 +264,9 @@ class TestBug2BluezErrorClassification:
             raise Exception(_BLUEZ_ALREADY_CONNECTED)
 
         results = await connect_all([dev], _connect)
-        assert results[dev.address] is True, (
-            "AlreadyConnected must be treated as success in connect_all"
-        )
+        assert (
+            results[dev.address] is True
+        ), "AlreadyConnected must be treated as success in connect_all"
 
     # ── Transient errors are retried, not immediately failed ──────────────
 
@@ -285,9 +292,7 @@ class TestBug2BluezErrorClassification:
         assert call_count == 3, "InProgress should be retried"
 
     @pytest.mark.asyncio
-    async def test_not_ready_is_retried(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_not_ready_is_retried(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _fake_sleep(monkeypatch)
         dev = _device()
         call_count = 0
@@ -369,9 +374,9 @@ class TestBug3CooldownInEventPath:
         await daemon._on_dbus_event(
             "properties_changed", path, DEVICE_IFACE, {"Connected": False}
         )
-        assert daemon._rescan_event.is_set(), (
-            "Rescan event must be set when device disconnects and is not in backoff"
-        )
+        assert (
+            daemon._rescan_event.is_set()
+        ), "Rescan event must be set when device disconnects and is not in backoff"
 
     @pytest.mark.asyncio
     async def test_disconnect_while_in_backoff_does_not_set_rescan_event(self) -> None:
@@ -415,9 +420,9 @@ class TestBug3CooldownInEventPath:
         )
 
         await daemon.run_once()
-        assert connect_called == [], (
-            "run_once must not call connect_device for a device in backoff"
-        )
+        assert (
+            connect_called == []
+        ), "run_once must not call connect_device for a device in backoff"
 
     @pytest.mark.asyncio
     async def test_run_once_connects_device_not_in_backoff(self) -> None:
@@ -476,9 +481,9 @@ class TestBug3CooldownInEventPath:
         await daemon._on_dbus_event(
             "properties_changed", path, DEVICE_IFACE, {"RSSI": -60}
         )
-        assert daemon._cooldown.is_ready(mac), (
-            "RSSI signal must reset backoff so device is immediately eligible"
-        )
+        assert daemon._cooldown.is_ready(
+            mac
+        ), "RSSI signal must reset backoff so device is immediately eligible"
         assert daemon._rescan_event.is_set(), "RSSI signal must trigger a rescan"
 
     @pytest.mark.asyncio
@@ -557,9 +562,9 @@ class TestBug3PeriodicScannerFallback:
         daemon.policy = RetryPolicy(max_attempts=1)
 
         await daemon._run_one_periodic_scan()
-        assert not daemon._cooldown.is_ready(mac), (
-            "Failed connection must put device into backoff"
-        )
+        assert not daemon._cooldown.is_ready(
+            mac
+        ), "Failed connection must put device into backoff"
         assert mac in daemon._cooldown._entries
 
     @pytest.mark.asyncio
@@ -573,13 +578,13 @@ class TestBug3PeriodicScannerFallback:
 
         daemon.client.get_adapters = AsyncMock(return_value=[_adapter()])  # type: ignore[method-assign]
         daemon.client.get_devices = AsyncMock(return_value=[dev])  # type: ignore[method-assign]
-        daemon.client.connect_device = AsyncMock()  # success  # type: ignore[method-assign]
+        daemon.client.connect_device = (
+            AsyncMock()
+        )  # success  # type: ignore[method-assign]
         daemon.policy = RetryPolicy(max_attempts=1)
 
         await daemon._run_one_periodic_scan()
-        assert daemon._cooldown.is_ready(mac), (
-            "Successful reconnect must reset backoff"
-        )
+        assert daemon._cooldown.is_ready(mac), "Successful reconnect must reset backoff"
         assert mac not in daemon._cooldown._entries
 
 
@@ -635,16 +640,14 @@ class TestBug4ConfigFileDaemonSection:
 
         # CLI explicitly sets rescan-interval to 10 (≠ default 30)
         args = argparse.Namespace(
-            max_attempts=5,           # default → config wins for this one
-            max_concurrency=5,        # default → config wins
-            rescan_interval=10.0,     # DIFFERENT from default → CLI wins
+            max_attempts=5,  # default → config wins for this one
+            max_concurrency=5,  # default → config wins
+            rescan_interval=10.0,  # DIFFERENT from default → CLI wins
         )
         daemon_cfg = _build_daemon_config_from_raw(
             {"daemon": {"rescan_interval_seconds": 60, "max_concurrency": 8}}
         )
-        retry_cfg = _build_retry_config_from_raw(
-            {"retry": {"max_attempts": 3}}
-        )
+        retry_cfg = _build_retry_config_from_raw({"retry": {"max_attempts": 3}})
         policy, max_concurrency, rescan_interval = _merge_daemon_params(
             args, daemon_cfg, retry_cfg
         )
@@ -667,8 +670,8 @@ class TestBug4ConfigFileDaemonSection:
         )
 
         args = argparse.Namespace(
-            max_attempts=5,        # default
-            max_concurrency=5,     # default
+            max_attempts=5,  # default
+            max_concurrency=5,  # default
             rescan_interval=30.0,  # default
         )
         daemon_cfg = _build_daemon_config_from_raw(
@@ -693,8 +696,7 @@ class TestBug4ConfigFileDaemonSection:
 
         cfg_file = tmp_path / "config.yaml"
         cfg_file.write_text(
-            "daemon:\n  rescan_interval_seconds: 75\n"
-            "retry:\n  max_attempts: 7\n"
+            "daemon:\n  rescan_interval_seconds: 75\n" "retry:\n  max_attempts: 7\n"
         )
         raw = _load_config(cfg_file)
         assert raw["daemon"]["rescan_interval_seconds"] == 75
@@ -747,7 +749,9 @@ class TestBug5AlreadyConnectedDoesNotAdvanceBackoff:
         # Prime the backoff as if previous failures happened.
         daemon._cooldown.record_failure(mac)
         daemon._cooldown.record_failure(mac)
-        daemon._cooldown._entries[mac].retry_after = time.monotonic() - 1  # make it ready
+        daemon._cooldown._entries[mac].retry_after = (
+            time.monotonic() - 1
+        )  # make it ready
 
         daemon.client.get_adapters = AsyncMock(return_value=[_adapter()])  # type: ignore[method-assign]
         daemon.client.get_devices = AsyncMock(return_value=[dev])  # type: ignore[method-assign]
@@ -759,9 +763,9 @@ class TestBug5AlreadyConnectedDoesNotAdvanceBackoff:
         await daemon.run_once()
 
         # Backoff must be reset (entry removed) because AlreadyConnected = success.
-        assert daemon._cooldown.is_ready(mac), (
-            "AlreadyConnected must cause backoff to reset, not advance"
-        )
+        assert daemon._cooldown.is_ready(
+            mac
+        ), "AlreadyConnected must cause backoff to reset, not advance"
         assert mac not in daemon._cooldown._entries
 
     @pytest.mark.asyncio
@@ -778,9 +782,9 @@ class TestBug5AlreadyConnectedDoesNotAdvanceBackoff:
         # After fix: this raises DeviceAlreadyConnectedError, which connect_all
         # catches and treats as True.
         results = await connect_all([dev], _connect)
-        assert results[dev.address] is True, (
-            "AlreadyConnected must never result in False (which would advance backoff)"
-        )
+        assert (
+            results[dev.address] is True
+        ), "AlreadyConnected must never result in False (which would advance backoff)"
 
 
 # ── End-to-end reconnect scenario ─────────────────────────────────────────────
@@ -835,7 +839,9 @@ class TestEndToEndReconnectScenario:
         # Step 1: run_once() after disconnect — fails, device goes into backoff.
         await daemon.run_once()
         assert call_count == 1
-        assert not daemon._cooldown.is_ready(mac), "Device must be in backoff after failure"
+        assert not daemon._cooldown.is_ready(
+            mac
+        ), "Device must be in backoff after failure"
 
         # Step 2: fast-forward past the backoff window.
         daemon._cooldown._entries[mac].retry_after = time.monotonic() - 1
@@ -877,9 +883,9 @@ class TestEndToEndReconnectScenario:
         await daemon.run_once()
 
         assert dev_ok.path in connected, "Healthy device must connect"
-        assert dev_stuck.path not in connected, (
-            "Device in backoff must not be connected"
-        )
+        assert (
+            dev_stuck.path not in connected
+        ), "Device in backoff must not be connected"
 
     @pytest.mark.asyncio
     async def test_adapter_power_cycle_triggers_rescan(self) -> None:

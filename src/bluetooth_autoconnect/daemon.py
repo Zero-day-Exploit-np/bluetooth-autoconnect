@@ -408,9 +408,7 @@ class AutoConnectDaemon:
                 "%s: attempting to connect %d device(s): %s",
                 adapter.name,
                 len(candidates),
-                ", ".join(
-                    f"{d.name} ({d.address})" for d in candidates
-                ),
+                ", ".join(f"{d.name} ({d.address})" for d in candidates),
             )
 
             results = await connect_all(
@@ -464,8 +462,7 @@ class AutoConnectDaemon:
                 devices = await self.client.get_devices(adapter_path=adapter.path)
                 # Only target eligible, disconnected devices.
                 eligible_disconnected = [
-                    d for d in devices
-                    if d.is_autoconnect_eligible and not d.connected
+                    d for d in devices if d.is_autoconnect_eligible and not d.connected
                 ]
 
                 # Respect backoff — devices in their cooldown window are skipped.
@@ -490,9 +487,7 @@ class AutoConnectDaemon:
                     "periodic scan %s: reconnecting %d device(s): %s",
                     adapter.name,
                     len(candidates),
-                    ", ".join(
-                        f"{d.name} ({d.address})" for d in candidates
-                    ),
+                    ", ".join(f"{d.name} ({d.address})" for d in candidates),
                 )
 
                 results = await connect_all(
@@ -504,9 +499,7 @@ class AutoConnectDaemon:
 
                 for addr, ok in results.items():
                     if ok:
-                        logger.info(
-                            "periodic scan: reconnect successful mac=%s", addr
-                        )
+                        logger.info("periodic scan: reconnect successful mac=%s", addr)
                         self._cooldown.reset(addr)
                         # on_connect hooks NOT fired here — same reason as run_once.
                     else:
@@ -596,9 +589,7 @@ class AutoConnectDaemon:
         mac = path.rsplit("/dev_", 1)[-1].replace("_", ":").upper()
 
         if changed.get("Connected") is False:
-            logger.info(
-                "device disconnected: mac=%s path=%s", mac, path
-            )
+            logger.info("device disconnected: mac=%s path=%s", mac, path)
 
             # Update hook state tracker regardless of backoff.
             if self.hook_runner is not None:
@@ -606,9 +597,7 @@ class AutoConnectDaemon:
                 if should_fire:
                     await self._fire_disconnect_hook(path)
                 else:
-                    logger.debug(
-                        "hook: suppressed duplicate DISCONNECTED mac=%s", mac
-                    )
+                    logger.debug("hook: suppressed duplicate DISCONNECTED mac=%s", mac)
             else:
                 self._state_tracker.record_disconnected(mac)
 
@@ -643,9 +632,7 @@ class AutoConnectDaemon:
                 if should_fire:
                     await self._fire_connect_hook(path, mac)
                 else:
-                    logger.debug(
-                        "hook: suppressed duplicate CONNECTED mac=%s", mac
-                    )
+                    logger.debug("hook: suppressed duplicate CONNECTED mac=%s", mac)
             else:
                 self._state_tracker.record_connected(mac)
 
@@ -663,15 +650,11 @@ class AutoConnectDaemon:
             self._rescan_event.set()
 
         elif changed.get("Trusted") is True:
-            logger.info(
-                "device marked trusted: mac=%s — triggering rescan", mac
-            )
+            logger.info("device marked trusted: mac=%s — triggering rescan", mac)
             self._rescan_event.set()
 
         elif changed.get("Paired") is True:
-            logger.info(
-                "device paired: mac=%s — triggering rescan", mac
-            )
+            logger.info("device paired: mac=%s — triggering rescan", mac)
             self._rescan_event.set()
 
     # ── Hook helpers ──────────────────────────────────────────────────────
