@@ -161,6 +161,16 @@ class BluetoothBackend(Protocol):
         """
         ...
 
+    # ── Discovery (optional) ──────────────────────────────────────────────
+    # Backends that support active discovery implement these methods.
+    # Backends that do not support it (e.g. WindowsBackend, mock backends)
+    # can leave them absent — the daemon detects their presence at runtime
+    # via hasattr() rather than through the Protocol, so that the Protocol
+    # itself remains minimal and cross-platform.
+    #
+    # async def start_discovery(self, adapter_path: str) -> bool: ...
+    # async def stop_discovery(self, adapter_path: str) -> None: ...
+
 
 def get_platform_name() -> str:
     """Return the canonical lower-case platform name.

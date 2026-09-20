@@ -105,6 +105,16 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--discovery-duration",
+        type=float,
+        default=8.0,
+        metavar="SECONDS",
+        help=(
+            "Seconds to hold a BlueZ discovery window open during each"
+            " periodic scan. Default: 8. Set to 0 to disable active discovery."
+        ),
+    )
+    parser.add_argument(
         "--backend",
         type=str,
         default=None,
@@ -212,6 +222,7 @@ def _build_daemon_config_from_raw(raw: dict[str, Any]) -> DaemonConfig:
     known = {
         "rescan_interval_seconds",
         "scan_interval",
+        "discovery_duration_seconds",
         "adapter",
         "max_concurrency",
         "enable_automatic_reconnect",
@@ -245,6 +256,7 @@ _CLI_DEFAULTS = {
     "max_attempts": 5,
     "max_concurrency": 5,
     "rescan_interval": 30.0,
+    "discovery_duration": 8.0,
 }
 
 
@@ -252,15 +264,14 @@ def _merge_daemon_params(
     args: argparse.Namespace,
     daemon_cfg: DaemonConfig,
     retry_cfg: _RetryConfigModel,
-) -> tuple[RetryPolicy, int, float]:
+) -> tuple[RetryPolicy, int, float, float]:
     """Merge CLI args with config-file values.
 
     CLI flags take priority when they were explicitly set (differ from the
     argparse default).  Config-file values fill in the rest.
 
-    Returns (policy, max_concurrency, rescan_interval).
+    Returns (policy, max_concurrency, rescan_interval, discovery_duration).
     """
-    # max_attempts: CLI wins if the user explicitly passed --max-attempts
     if args.max_attempts != _CLI_DEFAULTS["max_attempts"]:
         max_attempts = args.max_attempts
     else:
@@ -273,25 +284,30 @@ def _merge_daemon_params(
         multiplier=retry_cfg.multiplier,
     )
 
-    # max_concurrency: CLI wins if explicitly passed
     if args.max_concurrency != _CLI_DEFAULTS["max_concurrency"]:
         max_concurrency = args.max_concurrency
     else:
         max_concurrency = daemon_cfg.max_concurrency
 
-    # rescan_interval: CLI wins if explicitly passed
     if args.rescan_interval != _CLI_DEFAULTS["rescan_interval"]:
         rescan_interval = args.rescan_interval
     else:
         rescan_interval = float(daemon_cfg.rescan_interval_seconds)
 
+    if args.discovery_duration != _CLI_DEFAULTS["discovery_duration"]:
+        discovery_duration = args.discovery_duration
+    else:
+        discovery_duration = float(daemon_cfg.discovery_duration_seconds)
+
     logger.debug(
-        "effective params: max_attempts=%d max_concurrency=%d" " rescan_interval=%.0fs",
+        "effective params: max_attempts=%d max_concurrency=%d"
+        " rescan_interval=%.0fs discovery_duration=%.0fs",
         max_attempts,
         max_concurrency,
         rescan_interval,
+        discovery_duration,
     )
-    return policy, max_concurrency, rescan_interval
+    return policy, max_concurrency, rescan_interval, discovery_duration
 
 
 async def _async_main(
@@ -323,7 +339,7 @@ async def _async_main(
         )
 
     # Merge CLI flags with config-file values (CLI wins when explicitly set).
-    policy, max_concurrency, rescan_interval = _merge_daemon_params(
+    policy, max_concurrency, rescan_interval, discovery_duration = _merge_daemon_params(
         args, daemon_cfg, retry_cfg
     )
 
@@ -334,6 +350,7 @@ async def _async_main(
             rescan_interval=(
                 rescan_interval if daemon_cfg.enable_automatic_reconnect else 0
             ),
+            discovery_duration=discovery_duration,
             hook_runner=hook_runner,
             backend=backend,
         )
@@ -343,7 +360,8 @@ async def _async_main(
     daemon = AutoConnectDaemon(
         policy=policy,
         max_concurrency=max_concurrency,
-        rescan_interval=0,  # one-shot mode: no background scanning
+        rescan_interval=0,
+        discovery_duration=0,
         hook_runner=hook_runner,
         backend=backend,
     )

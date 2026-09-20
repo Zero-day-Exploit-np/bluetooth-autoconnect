@@ -197,7 +197,7 @@ class TestRunOnceCooldownIntegration:
     """run_once() must update the cooldown registry based on connect results."""
 
     def _make_daemon(self) -> AutoConnectDaemon:
-        return AutoConnectDaemon(rescan_interval=0)
+        return AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
 
     def test_successful_connect_resets_cooldown(self) -> None:
         daemon = self._make_daemon()
@@ -317,7 +317,7 @@ class TestPeriodicScanScenario:
 
     def test_device_in_backoff_skipped_by_periodic_scan(self) -> None:
         """Device inside its cooldown window must not be contacted."""
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         device = _make_device(mac, connected=False)
 
@@ -342,7 +342,7 @@ class TestPeriodicScanScenario:
 
     def test_periodic_scan_disabled_when_interval_is_zero(self) -> None:
         """_periodic_scan_loop must exit immediately when rescan_interval <= 0."""
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
 
         async def runner() -> None:
             # The loop should return without sleeping
@@ -399,7 +399,7 @@ class TestDbusEventBackoffReset:
     """RSSI and Connected=True D-Bus events must clear backoff state."""
 
     def test_rssi_event_resets_backoff_and_triggers_rescan(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         daemon._cooldown.record_failure(mac)
         assert not daemon._cooldown.is_ready(mac)
@@ -415,7 +415,7 @@ class TestDbusEventBackoffReset:
         assert daemon._rescan_event.is_set()
 
     def test_connected_true_resets_backoff_without_rescan_event(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         daemon._cooldown.record_failure(mac)
 
@@ -434,7 +434,7 @@ class TestDbusEventBackoffReset:
         assert not daemon._rescan_event.is_set()
 
     def test_connected_false_triggers_rescan_event(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         path = f"/org/bluez/hci0/dev_{mac.replace(':', '_')}"
 

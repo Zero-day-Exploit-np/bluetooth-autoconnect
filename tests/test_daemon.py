@@ -13,7 +13,7 @@ from bluetooth_autoconnect.daemon import ADAPTER_IFACE, DEVICE_IFACE, AutoConnec
 
 @pytest.fixture
 def daemon() -> AutoConnectDaemon:
-    return AutoConnectDaemon()
+    return AutoConnectDaemon(discovery_duration=0)
 
 
 class TestOnDBusEvent:

@@ -40,6 +40,7 @@ class LoggingConfig:
 class DaemonConfig:
     scan_interval: int = 30  # legacy name kept for compat
     rescan_interval_seconds: int = 30
+    discovery_duration_seconds: int = 8
     adapter: str | None = None
     max_concurrency: int = 5
     enable_automatic_reconnect: bool = True
@@ -48,6 +49,7 @@ class DaemonConfig:
         return {
             "scan_interval": self.scan_interval,
             "rescan_interval_seconds": self.rescan_interval_seconds,
+            "discovery_duration_seconds": self.discovery_duration_seconds,
             "adapter": self.adapter,
             "max_concurrency": self.max_concurrency,
             "enable_automatic_reconnect": self.enable_automatic_reconnect,

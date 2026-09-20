@@ -361,7 +361,7 @@ class TestBug3CooldownInEventPath:
     """
 
     def _make_daemon(self) -> AutoConnectDaemon:
-        return AutoConnectDaemon(rescan_interval=0)
+        return AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
 
     @pytest.mark.asyncio
     async def test_disconnect_while_not_in_backoff_sets_rescan_event(self) -> None:
@@ -515,7 +515,7 @@ class TestBug3PeriodicScannerFallback:
 
     @pytest.mark.asyncio
     async def test_periodic_scan_retries_device_after_backoff_expires(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         dev = _device(mac, connected=False)
 
@@ -534,7 +534,7 @@ class TestBug3PeriodicScannerFallback:
 
     @pytest.mark.asyncio
     async def test_periodic_scan_skips_device_still_in_backoff(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         dev = _device(mac, connected=False)
 
@@ -550,7 +550,7 @@ class TestBug3PeriodicScannerFallback:
 
     @pytest.mark.asyncio
     async def test_failed_connection_advances_backoff_level(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         dev = _device(mac, connected=False)
 
@@ -569,7 +569,7 @@ class TestBug3PeriodicScannerFallback:
 
     @pytest.mark.asyncio
     async def test_successful_reconnect_resets_backoff(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         mac = "AA:BB:CC:DD:EE:FF"
         dev = _device(mac, connected=False)
 
@@ -643,12 +643,13 @@ class TestBug4ConfigFileDaemonSection:
             max_attempts=5,  # default → config wins for this one
             max_concurrency=5,  # default → config wins
             rescan_interval=10.0,  # DIFFERENT from default → CLI wins
+            discovery_duration=8.0,  # default
         )
         daemon_cfg = _build_daemon_config_from_raw(
             {"daemon": {"rescan_interval_seconds": 60, "max_concurrency": 8}}
         )
         retry_cfg = _build_retry_config_from_raw({"retry": {"max_attempts": 3}})
-        policy, max_concurrency, rescan_interval = _merge_daemon_params(
+        policy, max_concurrency, rescan_interval, _ = _merge_daemon_params(
             args, daemon_cfg, retry_cfg
         )
 
@@ -670,15 +671,16 @@ class TestBug4ConfigFileDaemonSection:
         )
 
         args = argparse.Namespace(
-            max_attempts=5,  # default
-            max_concurrency=5,  # default
-            rescan_interval=30.0,  # default
+            max_attempts=5,
+            max_concurrency=5,
+            rescan_interval=30.0,
+            discovery_duration=8.0,
         )
         daemon_cfg = _build_daemon_config_from_raw(
             {"daemon": {"rescan_interval_seconds": 90}}
         )
         retry_cfg = _build_retry_config_from_raw({})
-        _, _, rescan_interval = _merge_daemon_params(args, daemon_cfg, retry_cfg)
+        _, _, rescan_interval, _ = _merge_daemon_params(args, daemon_cfg, retry_cfg)
         assert rescan_interval == 90.0
 
     def test_enable_automatic_reconnect_false_sets_rescan_to_zero(
@@ -744,7 +746,7 @@ class TestBug5AlreadyConnectedDoesNotAdvanceBackoff:
         _fake_sleep(monkeypatch)
         mac = "AA:BB:CC:DD:EE:FF"
         dev = _device(mac, connected=False)
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
 
         # Prime the backoff as if previous failures happened.
         daemon._cooldown.record_failure(mac)
@@ -830,7 +832,7 @@ class TestEndToEndReconnectScenario:
                 raise Exception("org.bluez.Error.Failed: br-connection-page-timeout")
             # Periodic scan attempt succeeds.
 
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         daemon.policy = RetryPolicy(max_attempts=1)
         daemon.client.get_adapters = AsyncMock(return_value=[_adapter()])  # type: ignore[method-assign]
         daemon.client.get_devices = AsyncMock(return_value=[dev_disconnected])  # type: ignore[method-assign]
@@ -864,7 +866,7 @@ class TestEndToEndReconnectScenario:
         dev_stuck = _device(mac_stuck, connected=False)
         dev_ok = _device(mac_ok, connected=False)
 
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         daemon.policy = RetryPolicy(max_attempts=1)
 
         # mac_stuck is in backoff.
@@ -890,7 +892,7 @@ class TestEndToEndReconnectScenario:
     @pytest.mark.asyncio
     async def test_adapter_power_cycle_triggers_rescan(self) -> None:
         """Adapter powered off then on must trigger a full rescan."""
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
 
         await daemon._on_dbus_event(
             "properties_changed",
@@ -902,7 +904,7 @@ class TestEndToEndReconnectScenario:
 
     @pytest.mark.asyncio
     async def test_unpaired_device_is_skipped(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         dev = _device(paired=False, trusted=True, connected=False)
 
         daemon.client.get_adapters = AsyncMock(return_value=[_adapter()])  # type: ignore[method-assign]
@@ -914,7 +916,7 @@ class TestEndToEndReconnectScenario:
 
     @pytest.mark.asyncio
     async def test_untrusted_device_is_skipped(self) -> None:
-        daemon = AutoConnectDaemon(rescan_interval=0)
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
         dev = _device(paired=True, trusted=False, connected=False)
 
         daemon.client.get_adapters = AsyncMock(return_value=[_adapter()])  # type: ignore[method-assign]

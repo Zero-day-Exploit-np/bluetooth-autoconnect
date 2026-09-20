@@ -205,7 +205,7 @@ def test_daemon_run_once_handles_adapters_and_devices(
 
 
 def test_daemon_event_callbacks_set_rescan(monkeypatch: pytest.MonkeyPatch) -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
     events = [
         (
             "properties_changed",
@@ -234,7 +234,7 @@ def test_daemon_event_callbacks_set_rescan(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_daemon_install_signal_handlers_records_registration() -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
     seen: list[tuple[int, object]] = []
 
     class FakeLoop:
@@ -246,7 +246,7 @@ def test_daemon_install_signal_handlers_records_registration() -> None:
 
 
 def test_daemon_run_forever_executes_lifecycle(monkeypatch: pytest.MonkeyPatch) -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
     daemon.client = FakeClient()
     daemon._stop_event.set()
 
@@ -418,7 +418,7 @@ def test_cli_main_handles_bluetooth_error() -> None:
 
 
 def test_daemon_run_once_handles_empty_and_unpowered_states() -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
 
     async def _empty_adapters():
         return []

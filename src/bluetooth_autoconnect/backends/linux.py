@@ -7,6 +7,20 @@ it as ``BlueZClient`` for backward compatibility with existing code and tests.
 Only this file imports ``dbus_next``.  Every other module in the package
 receives a ``BluetoothBackend``-typed reference and never imports D-Bus
 types directly.
+
+Discovery support
+-----------------
+``start_discovery(adapter_path)`` and ``stop_discovery(adapter_path)``
+call ``org.bluez.Adapter1.StartDiscovery()`` / ``StopDiscovery()`` over
+D-Bus.  The daemon uses these during its periodic scan windows to actively
+scan for paired devices that have returned to range.
+
+BlueZ discovery sessions are reference-counted per client.  Calling
+``StartDiscovery()`` when another session is already active returns
+``org.bluez.Error.InProgress`` — this is NOT an error; it means scanning
+is already underway and we continue listening for events normally.
+Calling ``StopDiscovery()`` only releases *our* session; other clients
+keep their sessions running.
 """
 
 from __future__ import annotations
@@ -34,6 +48,11 @@ OBJECT_MANAGER_IFACE = "org.freedesktop.DBus.ObjectManager"
 PROPERTIES_IFACE = "org.freedesktop.DBus.Properties"
 DBUS_SERVICE = "org.freedesktop.DBus"
 DBUS_PATH = "/org/freedesktop/DBus"
+
+# BlueZ error names we handle explicitly in discovery calls.
+_BLUEZ_IN_PROGRESS = "org.bluez.Error.InProgress"
+_BLUEZ_NOT_READY = "org.bluez.Error.NotReady"
+_BLUEZ_FAILED = "org.bluez.Error.Failed"
 
 logger = logging.getLogger("bluetooth_autoconnect.backends.linux")
 
@@ -85,6 +104,18 @@ def _schedule(coro: Any) -> None:  # noqa: ANN401
         )
 
 
+def _bluez_error_name(exc: Exception) -> str | None:
+    """Extract the BlueZ D-Bus error name from an exception, if any."""
+    error_type = getattr(exc, "type", None)
+    if error_type is not None:
+        return str(error_type)
+    msg = str(exc)
+    for candidate in (_BLUEZ_IN_PROGRESS, _BLUEZ_NOT_READY, _BLUEZ_FAILED):
+        if candidate in msg:
+            return candidate
+    return None
+
+
 # ── LinuxBackend ──────────────────────────────────────────────────────────────
 
 
@@ -103,6 +134,9 @@ class LinuxBackend:
         self._bluez_root: ProxyObject | None = None
         # Declared as ProxyInterface so mypy accepts the assignment.
         self._object_manager: ProxyInterface | None = None
+        # Track which adapters we have called StartDiscovery() on, so we
+        # can call StopDiscovery() symmetrically.
+        self._discovery_active: set[str] = set()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────
 
@@ -136,7 +170,19 @@ class LinuxBackend:
             ) from exc
 
     async def close(self) -> None:
-        """Disconnect from the D-Bus system bus."""
+        """Disconnect from the D-Bus system bus.
+
+        Any active discovery sessions are stopped before disconnecting so
+        BlueZ can release its scan resources.
+        """
+        # Best-effort: stop any discovery sessions we started.
+        for adapter_path in list(self._discovery_active):
+            try:
+                await self.stop_discovery(adapter_path)
+            except Exception:  # noqa: BLE001
+                pass
+        self._discovery_active.clear()
+
         if self._bus is not None:
             self._bus.disconnect()
             self._bus = None
@@ -227,6 +273,122 @@ class LinuxBackend:
         await cast(Any, props_iface).call_set(
             ADAPTER_IFACE, "Powered", Variant("b", powered)
         )
+
+    # ── Discovery ─────────────────────────────────────────────────────────
+
+    async def start_discovery(self, adapter_path: str) -> bool:
+        """Call ``org.bluez.Adapter1.StartDiscovery()`` on *adapter_path*.
+
+        Sets a discovery filter of ``Transport="auto"`` to scan both
+        Bluetooth Classic (BR/EDR) and BLE without requiring separate
+        filter calls for each transport type.  ``DuplicateData`` is left
+        at its BlueZ default (``false``) to avoid flooding the event loop
+        with repeated BLE advertisements.
+
+        BlueZ discovery sessions are reference-counted.  If another client
+        already started discovery, ``StartDiscovery()`` returns
+        ``org.bluez.Error.InProgress`` — this is handled gracefully: we
+        mark the adapter as "in discovery" and continue listening for
+        device events normally.
+
+        Parameters
+        ----------
+        adapter_path:
+            D-Bus object path of the adapter, e.g. ``/org/bluez/hci0``.
+
+        Returns
+        -------
+        bool
+            ``True`` if discovery was successfully started (or was already
+            in progress), ``False`` if the adapter is not ready.
+
+        Raises
+        ------
+        DBusConnectionError
+            :meth:`connect` has not been called yet.
+        """
+        if self._bus is None:
+            raise DBusConnectionError(_NOT_CONNECTED)
+
+        try:
+            introspection = await self._bus.introspect(BLUEZ_SERVICE, adapter_path)
+            proxy = self._bus.get_proxy_object(
+                BLUEZ_SERVICE, adapter_path, introspection
+            )
+            adapter_iface = proxy.get_interface(ADAPTER_IFACE)
+
+            # Set filter: Transport=auto covers both BR/EDR and BLE.
+            # DuplicateData defaults to False which avoids repeated BLE
+            # advertisement floods.
+            discovery_filter = {"Transport": Variant("s", "auto")}
+            await cast(Any, adapter_iface).call_set_discovery_filter(discovery_filter)
+
+            await cast(Any, adapter_iface).call_start_discovery()
+            self._discovery_active.add(adapter_path)
+            logger.debug("discovery started on adapter %s", adapter_path)
+            return True
+
+        except Exception as exc:  # noqa: BLE001
+            err = _bluez_error_name(exc)
+            if err == _BLUEZ_IN_PROGRESS:
+                # Another client is already scanning — piggyback on their
+                # session.  We still add to _discovery_active so we call
+                # StopDiscovery() at the right time.
+                self._discovery_active.add(adapter_path)
+                logger.debug(
+                    "discovery already in progress on %s"
+                    " — using existing session",
+                    adapter_path,
+                )
+                return True
+            if err == _BLUEZ_NOT_READY:
+                logger.debug(
+                    "adapter %s not ready for discovery: %s", adapter_path, exc
+                )
+                return False
+            # Any other error: log and continue; don't crash the daemon.
+            logger.warning(
+                "start_discovery failed on %s: %s", adapter_path, exc
+            )
+            return False
+
+    async def stop_discovery(self, adapter_path: str) -> None:
+        """Call ``org.bluez.Adapter1.StopDiscovery()`` on *adapter_path*.
+
+        Only releases *our* discovery session.  If other BlueZ clients are
+        scanning, their sessions remain active.  Errors are logged and
+        swallowed so that a failed ``StopDiscovery`` never prevents the
+        daemon from continuing.
+
+        Parameters
+        ----------
+        adapter_path:
+            D-Bus object path of the adapter.
+
+        Raises
+        ------
+        DBusConnectionError
+            :meth:`connect` has not been called yet.
+        """
+        if self._bus is None:
+            raise DBusConnectionError(_NOT_CONNECTED)
+
+        self._discovery_active.discard(adapter_path)
+
+        try:
+            introspection = await self._bus.introspect(BLUEZ_SERVICE, adapter_path)
+            proxy = self._bus.get_proxy_object(
+                BLUEZ_SERVICE, adapter_path, introspection
+            )
+            adapter_iface = proxy.get_interface(ADAPTER_IFACE)
+            await cast(Any, adapter_iface).call_stop_discovery()
+            logger.debug("discovery stopped on adapter %s", adapter_path)
+        except Exception as exc:  # noqa: BLE001
+            # StopDiscovery can fail if the adapter was powered off or
+            # BlueZ was restarted.  This is not fatal.
+            logger.debug(
+                "stop_discovery on %s raised (ignored): %s", adapter_path, exc
+            )
 
     # ── Device connection ─────────────────────────────────────────────────
 

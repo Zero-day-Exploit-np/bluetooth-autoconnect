@@ -18,6 +18,17 @@ daemon:
   max_concurrency: 5
   enable_automatic_reconnect: true
 
+  # ── Active discovery ───────────────────────────────────────────────────
+  # How long (seconds) to hold a BlueZ StartDiscovery() window open during
+  # each periodic scan pass.  During this window BlueZ actively scans for
+  # nearby devices and emits RSSI / property updates when it detects one.
+  # This is the fix for "device comes back into range but never reconnects"
+  # on headless systems where no GUI triggers a scan.
+  #
+  # Set to 0 to disable active discovery (events-only mode).
+  # Default: 8 seconds per scan window.
+  discovery_duration_seconds: 8
+
 # ── Hook scripts ──────────────────────────────────────────────────────────────
 #
 # Execute custom scripts when a Bluetooth device connects or disconnects.

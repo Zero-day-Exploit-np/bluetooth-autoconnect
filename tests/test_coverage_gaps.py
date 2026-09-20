@@ -200,7 +200,7 @@ def test_subscribe_interfaces_removed_callback(monkeypatch: pytest.MonkeyPatch) 
 
 
 def test_signal_handler_shutdown_closure() -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
     captured: list = []
 
     class FakeLoop:
@@ -216,7 +216,7 @@ def test_signal_handler_shutdown_closure() -> None:
 
 
 def test_signal_handler_rescan_closure() -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
     captured: list = []
 
     class FakeLoop:
@@ -235,7 +235,7 @@ def test_signal_handler_rescan_closure() -> None:
 
 
 def test_run_forever_propagates_connect_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
 
     class FailClient:
         async def connect(self):
@@ -251,7 +251,7 @@ def test_run_forever_propagates_connect_error(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_run_forever_propagates_bluez_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    daemon = AutoConnectDaemon()
+    daemon = AutoConnectDaemon(discovery_duration=0)
 
     class FailClient:
         async def connect(self):

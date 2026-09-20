@@ -437,7 +437,7 @@ class TestDaemonReconnectPipeline:
         changed: dict,
         should_rescan: bool,
     ) -> None:
-        daemon = AutoConnectDaemon()
+        daemon = AutoConnectDaemon(discovery_duration=0)
         daemon._rescan_event.clear()
         asyncio.run(daemon._on_dbus_event(event, path, iface, changed))
         assert daemon._rescan_event.is_set() == should_rescan, (
@@ -450,7 +450,7 @@ class TestDaemonReconnectPipeline:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """End-to-end: adapter power-on signal → daemon detects it → run_once called."""
-        daemon = AutoConnectDaemon()
+        daemon = AutoConnectDaemon(discovery_duration=0)
         monkeypatch.setattr(
             "bluetooth_autoconnect.backends.linux.MessageBus",
             lambda *a, **kw: _FakeBus(),
