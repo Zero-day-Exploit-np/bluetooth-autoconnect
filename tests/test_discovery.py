@@ -124,8 +124,12 @@ class TestDiscoveryManager:
         class _NoDiscoveryBackend:
             async def connect(self) -> None: ...
             async def close(self) -> None: ...
-            async def get_adapters(self) -> list: return []
-            async def get_devices(self, adapter_path=None) -> list: return []
+            async def get_adapters(self) -> list:
+                return []
+
+            async def get_devices(self, adapter_path=None) -> list:
+                return []
+
             async def connect_device(self, path: str) -> None: ...
             async def subscribe(self, cb: object) -> None: ...
 
@@ -158,9 +162,9 @@ class TestDiscoveryManager:
 
         await asyncio.gather(_first(), _second())
         assert first_result == [True]
-        assert second_result == [False], (
-            "_DiscoveryManager must reject a concurrent run_window call"
-        )
+        assert second_result == [
+            False
+        ], "_DiscoveryManager must reject a concurrent run_window call"
 
     @pytest.mark.asyncio
     async def test_stop_called_even_when_start_fails(self) -> None:
@@ -226,12 +230,12 @@ class TestDiscoveryTriggersReconnect:
             "properties_changed", path, DEVICE_IFACE, {"RSSI": -65}
         )
 
-        assert daemon._cooldown.is_ready(mac), (
-            "RSSI update must reset backoff — device is in range"
-        )
-        assert daemon._rescan_event.is_set(), (
-            "RSSI update must trigger an immediate reconnect attempt"
-        )
+        assert daemon._cooldown.is_ready(
+            mac
+        ), "RSSI update must reset backoff — device is in range"
+        assert (
+            daemon._rescan_event.is_set()
+        ), "RSSI update must trigger an immediate reconnect attempt"
 
     @pytest.mark.asyncio
     async def test_services_resolved_resets_backoff_and_triggers_rescan(
@@ -252,9 +256,7 @@ class TestDiscoveryTriggersReconnect:
             {"ServicesResolved": True},
         )
 
-        assert daemon._cooldown.is_ready(mac), (
-            "ServicesResolved must reset backoff"
-        )
+        assert daemon._cooldown.is_ready(mac), "ServicesResolved must reset backoff"
         assert daemon._rescan_event.is_set()
 
     @pytest.mark.asyncio
@@ -352,9 +354,9 @@ class TestPeriodicScanDiscovery:
 
         await daemon._run_one_periodic_scan()
 
-        assert not started_on, (
-            "start_discovery must NOT be called when all devices are connected"
-        )
+        assert (
+            not started_on
+        ), "start_discovery must NOT be called when all devices are connected"
 
     @pytest.mark.asyncio
     async def test_discovery_not_started_when_duration_is_zero(self) -> None:
@@ -546,9 +548,9 @@ class TestPeriodicScanDiscovery:
         daemon.client = _FakeBackend()  # type: ignore[assignment]
 
         await daemon._run_one_periodic_scan()
-        assert not connect_calls, (
-            "Device in backoff must NOT be connected even after discovery window"
-        )
+        assert (
+            not connect_calls
+        ), "Device in backoff must NOT be connected even after discovery window"
 
     @pytest.mark.asyncio
     async def test_cooldown_expires_and_device_reconnects_next_scan(self) -> None:
@@ -584,9 +586,9 @@ class TestPeriodicScanDiscovery:
         daemon.policy = RetryPolicy(max_attempts=1)
 
         await daemon._run_one_periodic_scan()
-        assert dev.path in connect_calls, (
-            "Device with expired cooldown must be connected"
-        )
+        assert (
+            dev.path in connect_calls
+        ), "Device with expired cooldown must be connected"
 
 
 # ── LinuxBackend discovery unit tests ─────────────────────────────────────────
@@ -713,9 +715,9 @@ class TestAdapterPowerCycle:
             {"Powered": True},
         )
 
-        assert adapter_path not in daemon._discovery_managers, (
-            "Discovery manager must be cleared on adapter power-on"
-        )
+        assert (
+            adapter_path not in daemon._discovery_managers
+        ), "Discovery manager must be cleared on adapter power-on"
         assert daemon._rescan_event.is_set()
 
 

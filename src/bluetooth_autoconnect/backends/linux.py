@@ -336,8 +336,7 @@ class LinuxBackend:
                 # StopDiscovery() at the right time.
                 self._discovery_active.add(adapter_path)
                 logger.debug(
-                    "discovery already in progress on %s"
-                    " — using existing session",
+                    "discovery already in progress on %s" " — using existing session",
                     adapter_path,
                 )
                 return True
@@ -347,9 +346,7 @@ class LinuxBackend:
                 )
                 return False
             # Any other error: log and continue; don't crash the daemon.
-            logger.warning(
-                "start_discovery failed on %s: %s", adapter_path, exc
-            )
+            logger.warning("start_discovery failed on %s: %s", adapter_path, exc)
             return False
 
     async def stop_discovery(self, adapter_path: str) -> None:
@@ -386,9 +383,7 @@ class LinuxBackend:
         except Exception as exc:  # noqa: BLE001
             # StopDiscovery can fail if the adapter was powered off or
             # BlueZ was restarted.  This is not fatal.
-            logger.debug(
-                "stop_discovery on %s raised (ignored): %s", adapter_path, exc
-            )
+            logger.debug("stop_discovery on %s raised (ignored): %s", adapter_path, exc)
 
     # ── Device connection ─────────────────────────────────────────────────
 

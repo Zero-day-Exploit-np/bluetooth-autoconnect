@@ -515,8 +515,7 @@ class AutoConnectDaemon:
             for adapter in powered:
                 devices = await self.client.get_devices(adapter_path=adapter.path)
                 eligible_disconnected = [
-                    d for d in devices
-                    if d.is_autoconnect_eligible and not d.connected
+                    d for d in devices if d.is_autoconnect_eligible and not d.connected
                 ]
 
                 if not eligible_disconnected:
@@ -530,9 +529,7 @@ class AutoConnectDaemon:
                     "periodic scan %s: %d disconnected device(s) waiting: %s",
                     adapter.name,
                     len(eligible_disconnected),
-                    ", ".join(
-                        f"{d.name} ({d.address})" for d in eligible_disconnected
-                    ),
+                    ", ".join(f"{d.name} ({d.address})" for d in eligible_disconnected),
                 )
                 logger.info(
                     "periodic scan %s: waiting for device(s) to return"
@@ -568,8 +565,7 @@ class AutoConnectDaemon:
                 # may have updated RSSI / Connected properties.
                 devices = await self.client.get_devices(adapter_path=adapter.path)
                 eligible_disconnected = [
-                    d for d in devices
-                    if d.is_autoconnect_eligible and not d.connected
+                    d for d in devices if d.is_autoconnect_eligible and not d.connected
                 ]
                 candidates = self._cooldown.filter_ready(eligible_disconnected)
 
@@ -605,9 +601,7 @@ class AutoConnectDaemon:
 
                 for addr, ok in results.items():
                     if ok:
-                        logger.info(
-                            "periodic scan: reconnect successful mac=%s", addr
-                        )
+                        logger.info("periodic scan: reconnect successful mac=%s", addr)
                         self._cooldown.reset(addr)
                     else:
                         logger.debug(
@@ -757,8 +751,7 @@ class AutoConnectDaemon:
         elif changed.get("ServicesResolved") is True:
             # Profile service resolution completed — device is reachable.
             logger.info(
-                "device services resolved: mac=%s"
-                " — triggering reconnect",
+                "device services resolved: mac=%s" " — triggering reconnect",
                 mac,
             )
             self._cooldown.reset(mac)
