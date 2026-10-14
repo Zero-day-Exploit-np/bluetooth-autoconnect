@@ -28,6 +28,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from bluetooth_autoconnect.connector import RetryPolicy
 from bluetooth_autoconnect.daemon import (
     _BACKOFF_BASE_SECONDS,
     _BACKOFF_MAX_LEVEL,
@@ -388,6 +389,120 @@ class TestPeriodicScanScenario:
             await daemon._run_one_periodic_scan()  # must not raise
 
         asyncio.run(runner())
+
+    @pytest.mark.asyncio
+    async def test_periodic_scan_recovers_backend_and_resubscribes(self) -> None:
+        """A recoverable backend failure must not require a daemon restart."""
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
+        recovered = 0
+        subscribed = 0
+
+        async def recover() -> None:
+            nonlocal recovered
+            recovered += 1
+
+        async def subscribe(_callback: object) -> None:
+            nonlocal subscribed
+            subscribed += 1
+
+        daemon.client.get_adapters = AsyncMock(
+            side_effect=RuntimeError("temporary D-Bus failure")
+        )
+        daemon.client.recover = recover  # type: ignore[attr-defined]
+        daemon.client.subscribe = subscribe
+
+        await daemon._run_one_periodic_scan()
+
+        assert recovered == 1
+        assert subscribed == 1
+        assert daemon._rescan_event.is_set()
+
+    @pytest.mark.asyncio
+    async def test_overlapping_scans_do_not_connect_same_device_concurrently(
+        self,
+    ) -> None:
+        """Event and periodic scans must share one in-flight Connect() call."""
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
+        device = _make_device()
+        entered = asyncio.Event()
+        release = asyncio.Event()
+        calls = 0
+
+        async def connect(_path: str) -> None:
+            nonlocal calls
+            calls += 1
+            entered.set()
+            await release.wait()
+
+        daemon.client.get_adapters = AsyncMock(return_value=[_ADAPTER])
+        daemon.client.get_devices = AsyncMock(return_value=[device])
+        daemon.client.connect_device = AsyncMock(side_effect=connect)
+        daemon.policy = RetryPolicy(max_attempts=1)
+
+        event_scan = asyncio.create_task(daemon.run_once())
+        await entered.wait()
+        periodic_scan = asyncio.create_task(daemon._run_one_periodic_scan())
+        await asyncio.sleep(0)
+
+        assert calls == 1
+        release.set()
+        await asyncio.gather(event_scan, periodic_scan)
+
+    @pytest.mark.asyncio
+    async def test_repeated_rssi_does_not_reset_new_backoff(self) -> None:
+        """Only the first availability hint after a disconnect resets backoff."""
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
+        path = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+        mac = "AA:BB:CC:DD:EE:FF"
+
+        await daemon._handle_device_properties_changed(path, {"Connected": False})
+        daemon._cooldown.record_failure(mac)
+        await daemon._handle_device_properties_changed(path, {"RSSI": -60})
+
+        daemon._cooldown.record_failure(mac)
+        await daemon._handle_device_properties_changed(path, {"RSSI": -59})
+
+        assert not daemon._cooldown.is_ready(mac)
+
+    @pytest.mark.asyncio
+    async def test_repeated_services_resolved_does_not_reset_new_backoff(
+        self,
+    ) -> None:
+        """Repeated service updates must not bypass a later retry cooldown."""
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
+        path = "/org/bluez/hci0/dev_AA_BB_CC_DD_EE_FF"
+        mac = "AA:BB:CC:DD:EE:FF"
+
+        await daemon._handle_device_properties_changed(path, {"Connected": False})
+        daemon._cooldown.record_failure(mac)
+        await daemon._handle_device_properties_changed(path, {"ServicesResolved": True})
+
+        daemon._cooldown.record_failure(mac)
+        await daemon._handle_device_properties_changed(path, {"ServicesResolved": True})
+
+        assert not daemon._cooldown.is_ready(mac)
+
+    @pytest.mark.asyncio
+    async def test_cancelled_connection_releases_inflight_state(self) -> None:
+        """Cancellation must allow a later reconnect attempt."""
+        daemon = AutoConnectDaemon(rescan_interval=0, discovery_duration=0)
+        device = _make_device()
+        entered = asyncio.Event()
+
+        async def connect(_path: str) -> None:
+            entered.set()
+            await asyncio.Event().wait()
+
+        daemon.client.connect_device = AsyncMock(side_effect=connect)
+        daemon.policy = RetryPolicy(max_attempts=1)
+        task = asyncio.create_task(daemon._connect_candidates([device]))
+        await entered.wait()
+        task.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        assert device.address not in daemon._inflight_connections
 
 
 # ─────────────────────────────────────────────────────────────────────────────

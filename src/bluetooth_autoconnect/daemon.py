@@ -308,15 +308,19 @@ class _DiscoveryManager:
 
             await asyncio.sleep(self.duration_seconds)
             return True
-        except Exception:  # noqa: BLE001
+        except Exception:
+            logger.exception("discovery: window failed on %s", self.adapter_path)
             return False
         finally:
             self._running = False
             if hasattr(backend, "stop_discovery"):
                 try:
                     await backend.stop_discovery(self.adapter_path)
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception:
+                    logger.exception(
+                        "discovery: failed to stop window on %s",
+                        self.adapter_path,
+                    )
             logger.debug("discovery: window ended on %s", self.adapter_path)
 
 
@@ -362,6 +366,12 @@ class AutoConnectDaemon:
         self._state_tracker = _DeviceStateTracker()
         # Per-adapter discovery managers; populated lazily on first scan.
         self._discovery_managers: dict[str, _DiscoveryManager] = {}
+        # Protect the device-level Connect() operation when an event-driven
+        # scan overlaps a periodic scan.
+        self._inflight_connections: set[str] = set()
+        # RSSI/ServicesResolved events are availability hints.  Only the
+        # first hint after a disconnect represents a genuine return.
+        self._available_devices: set[str] = set()
 
     def _get_discovery_manager(self, adapter_path: str) -> _DiscoveryManager:
         """Return (creating if necessary) the manager for *adapter_path*."""
@@ -459,19 +469,7 @@ class AutoConnectDaemon:
                 ", ".join(f"{d.name} ({d.address})" for d in candidates),
             )
 
-            results = await connect_all(
-                candidates,
-                self.client.connect_device,
-                policy=self.policy,
-                max_concurrency=self.max_concurrency,
-            )
-            for addr, ok in results.items():
-                if ok:
-                    logger.info("reconnect succeeded: mac=%s", addr)
-                    self._cooldown.reset(addr)
-                else:
-                    logger.info("reconnect failed: mac=%s — scheduling backoff", addr)
-                    self._cooldown.record_failure(addr)
+            results = await self._connect_candidates(candidates)
             all_results.update(results)
 
         succeeded = sum(1 for ok in all_results.values() if ok)
@@ -483,6 +481,61 @@ class AutoConnectDaemon:
                 total,
             )
         return all_results
+
+    async def _connect_candidates(self, candidates: list[Device]) -> dict[str, bool]:
+        """Connect eligible devices while deduplicating overlapping scans."""
+        pending: list[Device] = []
+        for device in candidates:
+            if device.address in self._inflight_connections:
+                logger.debug(
+                    "reconnect deduplicated: mac=%s — connection already in flight",
+                    device.address,
+                )
+                continue
+            self._inflight_connections.add(device.address)
+            pending.append(device)
+
+        if not pending:
+            return {}
+
+        try:
+            logger.debug(
+                "reconnect scheduled: macs=%s",
+                ", ".join(device.address for device in pending),
+            )
+            results = await connect_all(
+                pending,
+                self.client.connect_device,
+                policy=self.policy,
+                max_concurrency=self.max_concurrency,
+            )
+            for addr, ok in results.items():
+                if ok:
+                    logger.info("reconnect succeeded: mac=%s", addr)
+                    self._cooldown.reset(addr)
+                else:
+                    logger.info("reconnect failed: mac=%s — scheduling backoff", addr)
+                    self._cooldown.record_failure(addr)
+            return results
+        finally:
+            for device in pending:
+                self._inflight_connections.discard(device.address)
+                logger.debug("reconnect task released: mac=%s", device.address)
+
+    async def _recover_backend(self) -> bool:
+        """Reconnect a backend that explicitly supports infrastructure recovery."""
+        recover = getattr(self.client, "recover", None)
+        if recover is None:
+            return False
+        try:
+            await recover()
+            await self.client.subscribe(self._on_dbus_event)
+        except Exception:
+            logger.exception("Backend recovery failed")
+            return False
+        logger.info("Backend recovery succeeded; scheduling a fresh scan")
+        self._rescan_event.set()
+        return True
 
     # ── Periodic scan with active discovery ───────────────────────────────
 
@@ -592,27 +645,11 @@ class AutoConnectDaemon:
                     ", ".join(f"{d.name} ({d.address})" for d in candidates),
                 )
 
-                results = await connect_all(
-                    candidates,
-                    self.client.connect_device,
-                    policy=self.policy,
-                    max_concurrency=self.max_concurrency,
-                )
-
-                for addr, ok in results.items():
-                    if ok:
-                        logger.info("periodic scan: reconnect successful mac=%s", addr)
-                        self._cooldown.reset(addr)
-                    else:
-                        logger.debug(
-                            "periodic scan: reconnect failed mac=%s"
-                            " — backoff advanced",
-                            addr,
-                        )
-                        self._cooldown.record_failure(addr)
+                await self._connect_candidates(candidates)
 
         except Exception:  # noqa: BLE001
             logger.exception("Error during periodic scan")
+            await self._recover_backend()
 
     async def _periodic_scan_loop(self) -> None:
         """Background task: periodic scan with active discovery."""
@@ -694,6 +731,7 @@ class AutoConnectDaemon:
 
         if changed.get("Connected") is False:
             logger.info("device disconnected: mac=%s path=%s", mac, path)
+            self._available_devices.discard(mac)
 
             if self.hook_runner is not None:
                 should_fire = self._state_tracker.record_disconnected(mac)
@@ -724,6 +762,7 @@ class AutoConnectDaemon:
                 "device connected: mac=%s path=%s — resetting backoff", mac, path
             )
             self._cooldown.reset(mac)
+            self._available_devices.add(mac)
 
             if self.hook_runner is not None:
                 should_fire = self._state_tracker.record_connected(mac)
@@ -739,22 +778,30 @@ class AutoConnectDaemon:
             # This is the primary "device returned" signal when active
             # discovery is running.
             rssi = changed.get("RSSI")
+            first_seen = mac not in self._available_devices
+            self._available_devices.add(mac)
             logger.info(
-                "device seen: mac=%s rssi=%s"
-                " — resetting backoff and scheduling reconnect",
+                "device seen: mac=%s rssi=%s first_seen=%s" " — scheduling reconnect",
                 mac,
                 rssi,
+                first_seen,
             )
-            self._cooldown.reset(mac)
+            if first_seen:
+                self._cooldown.reset(mac)
             self._rescan_event.set()
 
         elif changed.get("ServicesResolved") is True:
             # Profile service resolution completed — device is reachable.
+            first_seen = mac not in self._available_devices
+            self._available_devices.add(mac)
             logger.info(
-                "device services resolved: mac=%s" " — triggering reconnect",
+                "device services resolved: mac=%s first_seen=%s"
+                " — triggering reconnect",
                 mac,
+                first_seen,
             )
-            self._cooldown.reset(mac)
+            if first_seen:
+                self._cooldown.reset(mac)
             self._rescan_event.set()
 
         elif changed.get("Trusted") is True:
@@ -887,6 +934,7 @@ class AutoConnectDaemon:
                         await self.run_once()
                     except Exception:  # noqa: BLE001
                         logger.exception("Error during rescan pass")
+                        await self._recover_backend()
         finally:
             periodic_task.cancel()
             try:

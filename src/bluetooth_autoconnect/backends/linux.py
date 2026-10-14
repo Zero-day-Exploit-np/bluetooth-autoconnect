@@ -186,6 +186,14 @@ class LinuxBackend:
         if self._bus is not None:
             self._bus.disconnect()
             self._bus = None
+        self._bluez_root = None
+        self._object_manager = None
+
+    async def recover(self) -> None:
+        """Rebuild the D-Bus connection after a temporary BlueZ failure."""
+        logger.warning("Recovering the BlueZ/D-Bus connection")
+        await self.close()
+        await self.connect()
 
     # ── Device enumeration ────────────────────────────────────────────────
 
